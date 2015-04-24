@@ -49,13 +49,13 @@ type SpamStatus uint
 // for more info). Gokismet represents that distinction with the statuses
 // ProbableSpam and DefiniteSpam.
 const (
-	// StatusUnknown: Default status usually indicating an error
+	// StatusUnknown is a default status indicating an error
 	StatusUnknown SpamStatus = iota
-	// StatusNotSpam: Akismet did not detect any spam
+	// StatusNotSpam means that Akismet did not detect any spam
 	StatusNotSpam
-	// StatusProbableSpam: Akismet detected normal spam
+	// StatusProbableSpam means that Akismet detected normal spam
 	StatusProbableSpam
-	// StatusDefiniteSpam: Akismet detected "pervasive" spam
+	// StatusDefiniteSpam means that Akismet detected "pervasive" spam
 	StatusDefiniteSpam
 )
 
@@ -124,7 +124,7 @@ func (e APIError) Error() string {
 	return err
 }
 
-// API is a thin wrapper around the methods of the Akismet REST API.
+// An API is a thin wrapper around the methods of the Akismet REST API.
 // While it can be used directly, the Comment class is more convenient
 // in most cases.
 //
@@ -213,25 +213,25 @@ func (api *API) VerifyKey(key string, site string) error {
 
 // CheckComment checks a comment for spam. It takes a set of query parameters
 // describing the comment data and returns a SpamStatus and an error. If the
-// call is successful, the status is one of NotSpam, ProbableSpam, or
-// DefiniteSpam and the error is nil. If an error occurs (or Akismet returns
-// an unexpected value), the status is Unknown and the error is non-nil. You
-// must make a successful call to VerifyKey before calling CheckComment.
+// call succeeds, the returned status is one of StatusNotSpam,
+// StatusProbableSpam, or StatusDefiniteSpam and the returned error is nil.
+// Otherwise, CheckComment returns StatusUnknown and a non-nil error.
+// You must make a successful call to VerifyKey before calling CheckComment.
 //
-// According to the Akismet docs the following parameters are required:
+// See http://akismet.com/development/api/#comment-check for a list of
+// possible query parameters.
+//
+// According to the docs the following parameters are required:
 //
 //     blog           // the website where the comment was entered
 //     user_ip        // the ip address of the commenter
 //     user_agent     // the user agent of the commenter's browser
 //
-// In practice only the first two are actually required. The API call
-// will fail if either value is missing. User agent is not technically
-// required but it's highly advised. If it's not provided, Akismet's
-// results may be less accurate. In general you should supply as much
-// data about the comment as possible.
-//
-// See http://akismet.com/development/api/#comment-check for a list
-// of possible query paramters.
+// In practice only the first two values are genuinely required.
+// CheckComment will fail if either is missing. User agent is not
+// technically required but it's highly advised. If it's not provided,
+// Akismet's results may be less accurate. Always send as much data
+// about the comment to Akismet as possible.
 func (api *API) CheckComment(params *url.Values) (SpamStatus, error) {
 
 	if api.key == "" {
@@ -267,8 +267,8 @@ func (api *API) CheckComment(params *url.Values) (SpamStatus, error) {
 
 // SubmitSpam notifies Akismet of a spam comment that it failed to catch
 // in a previous call to CheckComment. It takes a set of query parameters
-// just like CheckComment. The returned error is non-nil if the API call
-// fails (or returns an unexpected value).
+// just like CheckComment. The returned error is non-nil if the call
+// fails.
 //
 // See http://akismet.com/development/api/#submit-spam for the Akismet
 // documentation. Contrary to the docs, there are no required parameters for
@@ -282,7 +282,7 @@ func (api *API) SubmitSpam(params *url.Values) error {
 // SubmitHam notifies Akismet of a legitimate comment incorrectly flagged
 // as spam by a previous call to CheckComment. It takes a set of query
 // parameters just like CheckComment. The returned error is non-nil if
-// the API call fails (or returns an unexpected value).
+// the call fails.
 //
 // See http://akismet.com/development/api/#submit-ham for the Akismet
 // documentation. Contrary to the docs, there are no required parameters for

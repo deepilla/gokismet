@@ -6,7 +6,7 @@ Gokismet is a Go implementation of the [Akismet anti-spam API](http://akismet.co
 
 [![GoDoc](https://godoc.org/github.com/deepilla/gokismet?status.svg)](https://godoc.org/github.com/deepilla/gokismet)
 
-The documentation for this package is [hosted on godoc.org](https://godoc.org/github.com/deepilla/gokismet).
+Documentation for this package is [hosted on godoc.org](https://godoc.org/github.com/deepilla/gokismet).
 
 ## Usage
 
@@ -53,8 +53,8 @@ In order to run the tests for this package you need to create a JSON file named 
 }
 ```
 
-The project's [`.gitignore`](blob/master/.gitignore) file ensures that the config file is not accidentally committed to a public repo, exposing your private API key.
+The [gitignore](.gitignore) file ensures that the config file is not accidentally committed to a public repo, exposing your private API key.
 
 ## Licensing
 
-Gokismet is available under an [MIT License](http://choosealicense.com/licenses/mit/). See the [LICENSE file](blob/master/LICENSE) for details.
+Gokismet is available under an [MIT License](http://choosealicense.com/licenses/mit/). See the [LICENSE](LICENSE) file for details.

@@ -44,16 +44,16 @@ Example 1. Checking spam with the Comment class:
 
 Example 2. Checking spam with the API class:
 
-    params := url.Values {
-        "blog", {"http://yourwebsite.com"},
-        "user_ip", {"127.0.0.1"},
-        "user_agent", {"Mozilla/5.0 (Windows; U; Windows NT 6.1; en-US; rv:1.9.2) Gecko/20100115 Firefox/3.6"},
-        "comment_author", {"admin"},
+    params := url.Values{
+        "blog",                 {"http://yourwebsite.com"},
+        "user_ip",              {"127.0.0.1"},
+        "user_agent",           {"Mozilla/5.0 (Windows; U; Windows NT 6.1; en-US; rv:1.9.2) Gecko/20100115 Firefox/3.6"},
+        "comment_author",       {"admin"},
         "comment_author_email", {"test@test.com"},
-        "comment_author_url", {"http://www.CheckOutMyCoolSite.com"},
-        "permalink", {"http://yourwebsite.com/blog/post=1"},
-        "comment_type", {"comment"},
-        "comment_content", {"This is the comment text."},
+        "comment_author_url",   {"http://www.CheckOutMyCoolSite.com"},
+        "permalink",            {"http://yourwebsite.com/blog/post=1"},
+        "comment_type",         {"comment"},
+        "comment_content",      {"This is the comment text."},
         ...
     }
 

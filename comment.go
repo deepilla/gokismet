@@ -16,9 +16,9 @@ type Comment struct {
 }
 
 // NewComment creates a Comment object with the provided Akismet API key
-// and website. The key and site are verified with Akismet and stored for
-// subsequent calls to Check, MarkSpam and MarkNotSpam. A non-nil error
-// is returned if verification fails.
+// and website. The key and website are verified with Akismet and stored
+// for use in subsequent calls to Check, MarkSpam and MarkNotSpam. A
+// non-nil error is returned if verification fails.
 func NewComment(key string, site string) (*Comment, error) {
 	return new(NewAPI, key, site)
 }
@@ -53,9 +53,10 @@ func new(newapi func() *API, key string, site string) (*Comment, error) {
 	return comment, nil
 }
 
-// Check sends a Comment to Akismet for spam checking. If the call succeeds
-// the returned status is NotSpam, ProbableSpam or DefiniteSpam. If it fails
-// the status is Unknown and the error is non-nil.
+// Check sends a Comment to Akismet for spam checking. If the call is
+// successful, the returned status is one of StatusNotSpam,
+// StatusProbableSpam or StatusDefiniteSpam and the returned error is nil.
+// Otherwise, Check returns StatusUnknown and a non-nil error.
 //
 // The Akismet docs advise sending as much information about a comment as
 // possible. The more data you provide, the more accurate the results. In
@@ -65,22 +66,22 @@ func (c *Comment) Check() (SpamStatus, error) {
 	return c.api.CheckComment(c.params)
 }
 
-// MarkSpam notifies Akismet that a comment it thought was legit is actually
-// spam. This implies that you have already called Check and received a status
-// of NotSpam. When calling MarkSpam you should provide as much of the comment
-// data from the original Check call as possible. It may not be possible to
-// resend everything, but the values you do send should be identical to those
-// from the first call.
+// MarkSpam notifies Akismet that a comment it thought was legitimate is
+// actually spam. This implies that you have previously called Check and
+// received a status of StatusNotSpam. When calling MarkSpam you should
+// provide as much of the comment data from the original Check call as
+// possible. You may not be able to resend everything, but any values you
+// do send should be identical to those of the first call.
 func (c *Comment) MarkSpam() error {
 	return c.api.SubmitSpam(c.params)
 }
 
 // MarkNotSpam notifies Akismet that a comment it thought was spam is actually
-// a legitimate comment. This implies that you have already called Check and
-// received a status of ProbableSpam or DefiniteSpam. When calling MarkNotSpam
-// you should provide as much of the comment data from the original Check call
-// as possible. It may not be possible to resend everything, but the values you
-// do send should be identical to those from the first call.
+// a legitimate comment. This implies that you have previously called Check and
+// received a status of StatusProbableSpam or StatusDefiniteSpam. When calling
+// MarkNotSpam you should provide as much of the comment data from the original
+// Check call as possible. You may not be able to resend everything, but any
+// values you do send should be identical to those of the first call.
 func (c *Comment) MarkNotSpam() error {
 	return c.api.SubmitHam(c.params)
 }
@@ -123,7 +124,8 @@ func (c *Comment) SetUserIP(s string) {
 }
 
 // SetUserAgent specifies the user agent of the commenter's browser.
-// This is highly recommended for calls to Check, MarkSpam and MarkNotSpam.
+// This is not technically required but still highly recommended for
+// calls to Check, MarkSpam and MarkNotSpam.
 func (c *Comment) SetUserAgent(s string) {
 	c.set(_UserAgent, s)
 }
