@@ -1,0 +1,4 @@
+# Config file for testing. Contains a (private) Akismet API key
+testconfig.json
+# Binary created by "go test -c"
+gokismet.test
