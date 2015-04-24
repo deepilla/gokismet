@@ -49,13 +49,13 @@ type SpamStatus uint
 // for more info). Gokismet represents that distinction with the statuses
 // ProbableSpam and DefiniteSpam.
 const (
-	// Unknown: Default status usually indicating an error
+	// StatusUnknown: Default status usually indicating an error
 	StatusUnknown SpamStatus = iota
-	// NotSpam: Akismet did not detect any spam
+	// StatusNotSpam: Akismet did not detect any spam
 	StatusNotSpam
-	// ProbableSpam: Akismet detected normal spam
+	// StatusProbableSpam: Akismet detected normal spam
 	StatusProbableSpam
-	// DefiniteSpam: Akismet detected "pervasive" spam
+	// StatusDefiniteSpam: Akismet detected "pervasive" spam
 	StatusDefiniteSpam
 )
 
@@ -188,7 +188,7 @@ func (api *API) SetDebugWriter(writer io.Writer) {
 // See http://akismet.com/development/api/#verify-key for more info.
 func (api *API) VerifyKey(key string, site string) error {
 
-	u := api.buildRequestUrl("verify-key", false)
+	u := api.buildRequestURL("verify-key", false)
 
 	params := url.Values{
 		_Key:  {key},
@@ -238,7 +238,7 @@ func (api *API) CheckComment(params *url.Values) (SpamStatus, error) {
 		return StatusUnknown, errKeyNotVerified
 	}
 
-	u := api.buildRequestUrl("comment-check", true)
+	u := api.buildRequestURL("comment-check", true)
 
 	result, header, err := api.execute(u, params)
 	if err != nil {
@@ -304,7 +304,7 @@ func (api *API) submit(path string, params *url.Values) error {
 		return errKeyNotVerified
 	}
 
-	u := api.buildRequestUrl(path, true)
+	u := api.buildRequestURL(path, true)
 
 	result, header, err := api.execute(u, params)
 	if err != nil {
@@ -320,10 +320,10 @@ func (api *API) submit(path string, params *url.Values) error {
 	return NewAPIErrorFromHeader("Akismet "+getMethod(path)+" failed", result, &header)
 }
 
-// buildRequestUrl constructs the URL for an Akismet API call given a
+// buildRequestURL constructs the URL for an Akismet API call given a
 // relative path to the endpoint and a flag indicating whether or not
 // to qualify the path with the API key.
-func (api *API) buildRequestUrl(path string, qualified bool) string {
+func (api *API) buildRequestURL(path string, qualified bool) string {
 
 	var host string
 
