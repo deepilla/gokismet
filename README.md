@@ -1,30 +1,61 @@
 # Gokismet
 
-Gokismet is a Go implementation of the [Akismet anti-spam API](http://akismet.com/development/api/#detailed-docs). It requires an [Akismet API key](https://akismet.com/signup/?connect=yes&plan=developer).
+[![GoDoc](https://godoc.org/github.com/deepilla/gokismet?status.svg)](https://godoc.org/github.com/deepilla/gokismet)
+
+Gokismet is a Go implementation of the [Akismet anti-spam API](http://akismet.com/development/api/#detailed-docs). It allows you to:
+
+- Check comments, forum posts, and other user-generated content for spam
+- Report missed spam and incorrectly flagged spam to Akismet
+
+**Note**: You will need an [Akismet API key](https://akismet.com/signup/?connect=yes&plan=developer) to use Gokismet.
 
 ## Documentation
 
-[![GoDoc](https://godoc.org/github.com/deepilla/gokismet?status.svg)](https://godoc.org/github.com/deepilla/gokismet)
+Hosted on [GoDoc](https://godoc.org/github.com/deepilla/gokismet).
 
-Documentation for this package is [hosted on godoc.org](https://godoc.org/github.com/deepilla/gokismet).
+## Installation
+
+``` go
+go get github.com/deepilla/gokismet
+```
 
 ## Usage
+
+Import the gokismet package.
+
+``` go
+import "github.com/deepilla/gokismet"
+```
+
+### Checking for spam
+
+Checking comments for spam is a simple 3-step process.
+
+Step 1: Create a new `Comment` object.
 
 ```go
 comment, err := gokismet.NewComment("YOUR_API_KEY", "http://www.yourwebsite.com")
 if err != nil {
     // Handle the error
 }
+```
 
+Step 2: Set your comment data.
+
+```go
 comment.SetUserIP("127.0.0.1")
 comment.SetUserAgent("Mozilla/5.0 (Windows; U; Windows NT 6.1; en-US; rv:1.9.2) Gecko/20100115 Firefox/3.6")
+comment.SetPermalink("http://www.yourwebsite.com/2015/05/05/its-cinco-de-mayo/")
 comment.SetAuthor("A. Commenter")
 comment.SetEmail("acommenter@aol.com")
 comment.SetURL("http://www.lovecincodemayo.com")
-comment.SetPermalink("http://www.yourwebsite.com/2015/05/05/its-cinco-de-mayo/")
 comment.SetContent("I love Cinco de Mayo!")
 ...
+```
 
+Step 3: Call the `Check` function.
+
+```go
 status, err := comment.Check()
 if err != nil {
     // Handle the error
@@ -40,9 +71,14 @@ switch status {
 }
 ```
 
+### Reporting mistakes to Akismet
+
+To notify Akismet of spam it failed to catch or legitimate content incorrectly
+flagged as spam, follow steps 1 and 2 above, then call `MarkSpam` or `MarkNotSpam`.
+
 ## Testing
 
-In order to run the tests for this package you need to create a JSON file named `testconfig.json` in the main project directory. This file contains configuration settings for the tests (including your Akismet API key). It should look something like this:
+Gokismet's tests require an Akismet API key to pass. If you want to run the tests yourself you must provide your own API key in a JSON file named `testconfig.json` (along with a few other settings). The file should look something like this:
 
 ``` json
 {
@@ -53,8 +89,8 @@ In order to run the tests for this package you need to create a JSON file named 
 }
 ```
 
-The [gitignore](.gitignore) file ensures that the config file is not accidentally committed to a public repo, exposing your private API key.
+Save `testconfig.json` to the main project directory and you should be good to go. A [gitignore](.gitignore) entry ensures that your private API key isn't accidentally committed to a public repo.
 
 ## Licensing
 
-Gokismet is available under an [MIT License](http://choosealicense.com/licenses/mit/). See the [LICENSE](LICENSE) file for details.
+[MIT License](http://choosealicense.com/licenses/mit/). See the [LICENSE](LICENSE) file for details.
