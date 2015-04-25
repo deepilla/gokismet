@@ -27,11 +27,9 @@ Import the gokismet package.
 import "github.com/deepilla/gokismet"
 ```
 
-### Checking for spam
+#### Checking for spam
 
-Checking comments for spam is a simple 3-step process.
-
-Step 1: Create a new `Comment` object.
+Step 1: Create a new `Comment` object (requires an API key).
 
 ```go
 comment, err := gokismet.NewComment("YOUR_API_KEY", "http://www.yourwebsite.com")
@@ -71,13 +69,13 @@ case gokismet.StatusDefiniteSpam:
 }
 ```
 
-### Reporting mistakes to Akismet
+#### Reporting mistakes to Akismet
 
-To notify Akismet of spam it failed to catch or legitimate content incorrectly flagged as spam, follow steps 1 and 2 above, then call `ReportSpam` or `ReportNotSpam`.
+To notify Akismet of missed spam or legitimate content incorrectly flagged as spam, follow steps 1 and 2 above, then call `ReportSpam` or `ReportNotSpam`.
 
 ## Testing
 
-Gokismet's tests require an Akismet API key to pass. If you want to run the tests yourself you must provide your own API key in a JSON file named `testconfig.json` (along with a few other settings). The file should look something like this:
+Gokismet's tests require an Akismet API key to pass. If you want to run the tests yourself you can provide your own API key in a JSON file named `testconfig.json` (along with a few other settings). The file should look something like this:
 
 ``` json
 {
@@ -88,8 +86,8 @@ Gokismet's tests require an Akismet API key to pass. If you want to run the test
 }
 ```
 
-Save `testconfig.json` to the main project directory and you should be good to go. A [gitignore](.gitignore) entry ensures that your private API key isn't accidentally committed to a public repo.
+Save `testconfig.json` to the main project directory and you're good to go. A [gitignore](.gitignore) entry ensures that your private API key isn't accidentally committed to a public repo.
 
 ## Licensing
 
-[MIT License](http://choosealicense.com/licenses/mit/). See the [LICENSE](LICENSE) file for details.
+Gokismet is provided under an [MIT License](http://choosealicense.com/licenses/mit/). See the [LICENSE](LICENSE) file for details.
