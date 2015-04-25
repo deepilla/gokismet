@@ -292,13 +292,13 @@ func TestCommentCheck(t *testing.T) {
 	checkSpamStatus(t, "CommentCheck", StatusProbableSpam, status, err)
 }
 
-func TestCommentSubmit(t *testing.T) {
+func TestCommentReport(t *testing.T) {
 	// Note: Comment object should be populated already
-	if err := comment.MarkSpam(); err != nil {
-		t.Fatalf("CommentSubmit Spam fail: %s", err.Error())
+	if err := comment.ReportSpam(); err != nil {
+		t.Fatalf("CommentReport Spam fail: %s", err.Error())
 	}
 
-	if err := comment.MarkNotSpam(); err != nil {
-		t.Fatalf("CommentSubmit NotSpam failed: %s", err.Error())
+	if err := comment.ReportNotSpam(); err != nil {
+		t.Fatalf("CommentReport NotSpam failed: %s", err.Error())
 	}
 }

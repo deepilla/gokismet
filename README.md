@@ -73,8 +73,7 @@ case gokismet.StatusDefiniteSpam:
 
 ### Reporting mistakes to Akismet
 
-To notify Akismet of spam it failed to catch or legitimate content incorrectly
-flagged as spam, follow steps 1 and 2 above, then call `MarkSpam` or `MarkNotSpam`.
+To notify Akismet of spam it failed to catch or legitimate content incorrectly flagged as spam, follow steps 1 and 2 above, then call `ReportSpam` or `ReportNotSpam`.
 
 ## Testing
 
