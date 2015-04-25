@@ -237,14 +237,14 @@ func TestAPISubmitSpam(t *testing.T) {
 	params := defaultParams()
 	err := api.SubmitSpam(&params)
 	if err != nil {
-		t.Errorf("APISubmitSpam failed: %s", err.Error())
+		t.Errorf("APISubmitSpam fail: %s", err.Error())
 	}
 
 	// TODO: Come up with a failing test for api.SubmitSpam. It seems
 	// to work even with no parameters.
 	err = api.SubmitSpam(&url.Values{})
 	if err != nil {
-		t.Errorf("APISubmitSpam (no params) failed: %s", err.Error())
+		t.Errorf("APISubmitSpam (no params) fail: %s", err.Error())
 	}
 }
 
@@ -252,14 +252,14 @@ func TestAPISubmitHam(t *testing.T) {
 	params := defaultParams()
 	err := api.SubmitHam(&params)
 	if err != nil {
-		t.Errorf("APISubmitHam failed: %s", err.Error())
+		t.Errorf("APISubmitHam fail: %s", err.Error())
 	}
 
 	// TODO: Come up with a failing test for api.SubmitHam. It seems
 	// to work even with no parameters.
 	err = api.SubmitHam(&url.Values{})
 	if err != nil {
-		t.Errorf("APISubmitHam (no params) failed: %s", err.Error())
+		t.Errorf("APISubmitHam (no params) fail: %s", err.Error())
 	}
 }
 
@@ -269,7 +269,7 @@ func TestCommentNew(t *testing.T) {
 	// object instead of initialising the global.
 	comment, err = NewTestComment(config.APIKey, config.Site)
 	if err != nil {
-		t.Errorf("CommentNew failed: %s", err.Error())
+		t.Errorf("CommentNew fail: %s", err.Error())
 	}
 }
 
@@ -310,6 +310,6 @@ func TestCommentReport(t *testing.T) {
 	}
 
 	if err := comment.ReportNotSpam(); err != nil {
-		t.Errorf("CommentReport NotSpam failed: %s", err.Error())
+		t.Errorf("CommentReport NotSpam fail: %s", err.Error())
 	}
 }
