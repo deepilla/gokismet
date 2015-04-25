@@ -5,7 +5,7 @@
 Gokismet is a Go implementation of the [Akismet anti-spam API](http://akismet.com/development/api/#detailed-docs). It allows you to:
 
 - Check comments, forum posts, and other user-generated content for spam
-- Report missed spam and incorrectly flagged spam to Akismet
+- Report missed spam or incorrectly flagged spam to Akismet
 
 **Note**: You will need an [Akismet API key](https://akismet.com/signup/?connect=yes&plan=developer) to use Gokismet.
 
@@ -62,12 +62,12 @@ if err != nil {
 }
 
 switch status {
-    case gokismet.StatusNotSpam:
-        fmt.Println("Akismet thinks this is a legit comment")
-    case gokismet.StatusProbableSpam:
-        fmt.Println("Akismet thinks this is spam")
-    case gokismet.StatusDefiniteSpam:
-        fmt.Println("Akismet thinks this is the worst kind of spam")
+case gokismet.StatusNotSpam:
+    fmt.Println("Akismet thinks this is a legit comment")
+case gokismet.StatusProbableSpam:
+    fmt.Println("Akismet thinks this is spam")
+case gokismet.StatusDefiniteSpam:
+    fmt.Println("Akismet thinks this is the worst kind of spam")
 }
 ```
 
