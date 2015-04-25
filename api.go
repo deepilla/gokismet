@@ -225,11 +225,11 @@ func (api *API) VerifyKey(key string, site string) error {
 //     user_ip        // the ip address of the commenter
 //     user_agent     // the user agent of the commenter's browser
 //
-// In practice only the first two values are genuinely required.
+// In practice only the website and IP address are genuinely required.
 // CheckComment will fail if either is missing. User agent is not
-// technically required but it's highly advised. If it's not provided,
-// Akismet's results may be less accurate. Best practice is to provide
-// as much data about the comment as possible.
+// mandatory but it's highly advised. Akismet's results may be less
+// accurate if it's not provided. Best practice is to provide as much
+// data about the comment as possible.
 func (api *API) CheckComment(params *url.Values) (SpamStatus, error) {
 
 	if api.key == "" {
