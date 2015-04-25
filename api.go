@@ -292,18 +292,17 @@ func (api *API) SubmitHam(params *url.Values) error {
 	return api.submit("submit-ham", params)
 }
 
-// submit notifies Akismet of mistakes in its spam detection (spam
-// incorrectly identified as ham and vice versa). The supplied path
-// determines whether the comment described in the query parameters is
-// submitted as spam or ham. The returned error is non-nil in the event
-// of an error or unexpected return value.
-func (api *API) submit(path string, params *url.Values) error {
+// submit does the heavy lifting for SubmitHam and SubmitSpam. The provided
+// method name determines whether the comment described by the query
+// parameters is submitted as spam or ham. The returned error is non-nil
+// in the event of an error.
+func (api *API) submit(method string, params *url.Values) error {
 
 	if api.key == "" {
 		return errKeyNotVerified
 	}
 
-	u := api.buildRequestURL(path, true)
+	u := api.buildRequestURL(method, true)
 
 	result, header, err := api.execute(u, params)
 	if err != nil {
@@ -319,10 +318,10 @@ func (api *API) submit(path string, params *url.Values) error {
 	return NewAPIError("Akismet "+strings.Replace(method, "-", " ", -1)+" failed", result, &header)
 }
 
-// buildRequestURL constructs the URL for an Akismet API call given a
-// relative path to the endpoint and a flag indicating whether or not
-// to qualify the path with the API key.
-func (api *API) buildRequestURL(path string, qualified bool) string {
+// buildRequestURL constructs the URL for an Akismet API call given an
+// API method name and a flag indicating whether or not to qualify the
+// domain with the API key.
+func (api *API) buildRequestURL(method string, qualified bool) string {
 
 	var host string
 
@@ -335,7 +334,7 @@ func (api *API) buildRequestURL(path string, qualified bool) string {
 	u := url.URL{
 		Scheme: akismetScheme,
 		Host:   host,
-		Path:   akismetVersion + "/" + path,
+		Path:   akismetVersion + "/" + method,
 	}
 
 	return u.String()
@@ -478,12 +477,4 @@ func writeAndRestore(writer io.Writer, write func(io.Writer) error, rc *io.ReadC
 // It can be called repeatedly without issues.
 func setRC(rc *io.ReadCloser, buf []byte) {
 	*rc = ioutil.NopCloser(bytes.NewReader(buf))
-}
-
-// getMethod extracts a method name from an API path by taking the rightmost
-// element of the path and replacing any hyphens with spaces. For example, a
-// path of "1.1/method-name" returns "method name".
-func getMethod(path string) string {
-	s := strings.Split(path, "/")
-	return strings.Replace(s[len(s)-1], "-", " ", -1)
 }
