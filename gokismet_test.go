@@ -98,10 +98,12 @@ func defaultParams() url.Values {
 
 func checkSpamStatus(t *testing.T, testName string, expectedStatus SpamStatus, status SpamStatus, err error) {
 	if err != nil {
-		t.Fatalf("%s fail: %s", testName, err.Error())
+		t.Errorf("%s fail: %s", testName, err.Error())
+		// No need to check the return value if the call failed
+		return
 	}
 	if status != expectedStatus {
-		t.Fatalf("%s fail: Status %s, Expected %s", testName, status, expectedStatus)
+		t.Errorf("%s fail: Status %s, Expected %s", testName, status, expectedStatus)
 	}
 }
 
@@ -111,19 +113,19 @@ func TestAPIKeyNotVerified(t *testing.T) {
 	// CheckComment should fail if the API key isn't verified
 	_, err := api.CheckComment(&params)
 	if err != errKeyNotVerified {
-		t.Fatalf("APIKeyNotVerified returned unexpected %s", err.Error())
+		t.Errorf("APIKeyNotVerified returned unexpected %s", err.Error())
 	}
 
 	// SubmitSpam should fail if the API key isn't verified
 	err = api.SubmitSpam(&params)
 	if err != errKeyNotVerified {
-		t.Fatalf("APIKeyNotVerified returned unexpected %s", err.Error())
+		t.Errorf("APIKeyNotVerified returned unexpected %s", err.Error())
 	}
 
 	// SubmitHam should fail if the API key isn't verified
 	err = api.SubmitHam(&params)
 	if err != errKeyNotVerified {
-		t.Fatalf("APIKeyNotVerified returned unexpected %s", err.Error())
+		t.Errorf("APIKeyNotVerified returned unexpected %s", err.Error())
 	}
 }
 
@@ -131,7 +133,7 @@ func TestAPIKeyNotVerified(t *testing.T) {
 func TestAPIVerifyKey(t *testing.T) {
 	err := api.VerifyKey(config.APIKey, config.Site)
 	if err != nil {
-		t.Fatalf("APIVerifyKey %s fail: %s", config.APIKey, err.Error())
+		t.Errorf("APIVerifyKey %s fail: %s", config.APIKey, err.Error())
 	}
 }
 
@@ -235,13 +237,14 @@ func TestAPISubmitSpam(t *testing.T) {
 	params := defaultParams()
 	err := api.SubmitSpam(&params)
 	if err != nil {
-		t.Fatalf("APISubmitSpam failed: %s", err.Error())
+		t.Errorf("APISubmitSpam failed: %s", err.Error())
 	}
 
-	// It's impossible to make this call fail, even with no parameters!
+	// TODO: Come up with a failing test for api.SubmitSpam. It seems
+	// to work even with no parameters.
 	err = api.SubmitSpam(&url.Values{})
 	if err != nil {
-		t.Fatalf("APISubmitSpam with no params failed: %s", err.Error())
+		t.Errorf("APISubmitSpam (no params) failed: %s", err.Error())
 	}
 }
 
@@ -249,29 +252,39 @@ func TestAPISubmitHam(t *testing.T) {
 	params := defaultParams()
 	err := api.SubmitHam(&params)
 	if err != nil {
-		t.Fatalf("APISubmitHam failed: %s", err.Error())
+		t.Errorf("APISubmitHam failed: %s", err.Error())
 	}
 
-	// It's impossible to make this call fail, even with no parameters!
+	// TODO: Come up with a failing test for api.SubmitHam. It seems
+	// to work even with no parameters.
 	err = api.SubmitHam(&url.Values{})
 	if err != nil {
-		t.Fatalf("APISubmitHam with no params failed: %s", err.Error())
+		t.Errorf("APISubmitHam (no params) failed: %s", err.Error())
 	}
 }
 
 func TestCommentNew(t *testing.T) {
 	var err error
+	// Note: If we use := here, Go will create a local Comment
+	// object instead of initialising the global.
 	comment, err = NewTestComment(config.APIKey, config.Site)
 	if err != nil {
+		// We can't continue without a Comment object
 		t.Fatalf("CommentNew failed: %s", err.Error())
 	}
-	// Unlike the API object we're not logging Comment calls
-	// to stdout or dev/null. That way we test the non-logging
-	// code path too.
+	// This call is needed to make the code compile. But it highlights
+	// the fact that we're not debugging the comment object (unlike the
+	// api object). By debugging one object and not the other we test
+	// both the logging and non-logging code paths.
 	api.SetDebugWriter(nil)
 }
 
 func TestCommentCheck(t *testing.T) {
+	if comment == nil {
+		// We can't continue without a Comment object
+		t.Fatal("CommentCheck fail: Comment object is nil.")
+	}
+
 	// Set up a non-spam comment
 	comment.SetUserIP(config.IP)
 	comment.SetUserAgent(config.UserAgent)
@@ -293,12 +306,16 @@ func TestCommentCheck(t *testing.T) {
 }
 
 func TestCommentReport(t *testing.T) {
-	// Note: Comment object should be populated already
+	if comment == nil {
+		// We can't continue without a Comment object
+		t.Fatal("CommentReport fail: Comment object is nil.")
+	}
+
 	if err := comment.ReportSpam(); err != nil {
-		t.Fatalf("CommentReport Spam fail: %s", err.Error())
+		t.Errorf("CommentReport Spam fail: %s", err.Error())
 	}
 
 	if err := comment.ReportNotSpam(); err != nil {
-		t.Fatalf("CommentReport NotSpam failed: %s", err.Error())
+		t.Errorf("CommentReport NotSpam failed: %s", err.Error())
 	}
 }
