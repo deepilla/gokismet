@@ -1,6 +1,7 @@
 package gokismet
 
 import (
+	"errors"
 	"io"
 	"net/url"
 	"strings"
@@ -19,8 +20,18 @@ type Comment struct {
 // and website. The key and website are verified with Akismet and stored
 // for use in subsequent calls to Check, ReportSpam and ReportNotSpam. A
 // non-nil error is returned if verification fails.
-func NewComment(key string, site string) (*Comment, error) {
-	return new(NewAPI, key, site)
+//
+// NewComment takes an optional third argument, the name of your application.
+// If provided it will be sent to Akismet as part of the user agent in any
+// API calls. The preferred format is application name/version, e.g.
+//
+//     comment, err := gokismet.NewComment("YOUR_API_KEY", "http://yourwebsite.com", "YourApplication/1.0")
+//
+// Omit the application name to use the default user agent of "Gokismet/1.0".
+//
+//     comment, err := gokismet.NewComment("YOUR_API_KEY", "http://yourwebsite.com")
+func NewComment(key string, site string, appName ...string) (*Comment, error) {
+	return new(NewAPI, key, site, appName...)
 }
 
 // NewTestComment creates a Comment object in test mode, meaning that Akismet
@@ -30,15 +41,21 @@ func NewComment(key string, site string) (*Comment, error) {
 // As with NewComment, the provided API key and website are verified with
 // Akismet and stored for subsequent calls to Check, ReportSpam and
 // ReportNotSpam. A non-nil error is returned if verification fails.
-func NewTestComment(key string, site string) (*Comment, error) {
-	return new(NewTestAPI, key, site)
+//
+// NewTestComment also supports the optional application name argument (see
+// NewComment).
+func NewTestComment(key string, site string, appName ...string) (*Comment, error) {
+	return new(NewTestAPI, key, site, appName...)
 }
 
 // new does the heavy lifting for NewComment and NewTestComment.
-// It initialises a new Comment object and verifies the Akismet API key.
-// If everything works you get a shiny new Comment object, otherwise you
-// get nil and a non-nil error object.
-func new(newapi func() *API, key string, site string) (*Comment, error) {
+// It initialises a new Comment object and verifies the provided Akismet
+// API key. It will also optionally set the user agent on the api member.
+// If everything works you get a new Comment object, otherwise you get nil
+// and a non-nil error object.
+func new(newapi func() *API, key string, site string, appName ...string) (*Comment, error) {
+
+	// Create a new Comment
 	comment := &Comment{
 		api: newapi(),
 		params: &url.Values{
@@ -46,10 +63,25 @@ func new(newapi func() *API, key string, site string) (*Comment, error) {
 			_Type: {"comment"},
 		},
 	}
+
+	// Optionally set the user agent
+	switch len(appName) {
+	case 0:
+		// No name provided - do nothing
+	case 1:
+		// Name provided - use it to set the user agent
+		comment.api.SetUserAgent(appName[0])
+	default:
+		// More than one name provided - fail
+		return nil, errors.New("multiple app names passed to NewComment: expected 0 or 1")
+	}
+
+	// Verify the API key and website
 	err := comment.api.VerifyKey(key, site)
 	if err != nil {
 		return nil, err
 	}
+
 	return comment, nil
 }
 

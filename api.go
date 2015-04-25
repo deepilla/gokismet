@@ -159,11 +159,11 @@ func NewTestAPI() *API {
 	return api
 }
 
-// SetApplication updates the user agent sent to Akismet in API calls.
+// SetUserAgent updates the user agent sent to Akismet in API calls.
 // The preferred format is application name/version, e.g.
 //
 //    MyApplication/1.0
-func (api *API) SetApplication(name string) {
+func (api *API) SetUserAgent(name string) {
 	if s := strings.TrimSpace(name); s != "" {
 		api.userAgent = s + " | " + defaultUserAgent
 	}
