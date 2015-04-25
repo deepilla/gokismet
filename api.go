@@ -27,17 +27,17 @@ const (
 	_UserAgent = "user_agent"
 	// Akismet uses the correct spelling of the word "referrer".
 	// We're using the HTTP misspelling for consistency with Golang.
-	_Referer      = "referrer"
-	_Permalink    = "permalink"
-	_Type         = "comment_type"
-	_Author       = "comment_author"
-	_Email        = "comment_author_email"
-	_URL          = "comment_author_url"
-	_Content      = "comment_content"
-	_CreateTime   = "comment_date_gmt"
-	_ArticleTime  = "comment_post_modified_gmt"
-	_SiteLanguage = "blog_lang"
-	_Charset      = "blog_charset"
+	_Referer       = "referrer"
+	_Page          = "permalink"
+	_PageTimestamp = "comment_post_modified_gmt"
+	_Type          = "comment_type"
+	_Author        = "comment_author"
+	_Email         = "comment_author_email"
+	_URL           = "comment_author_url"
+	_Content       = "comment_content"
+	_Timestamp     = "comment_date_gmt"
+	_SiteLanguage  = "blog_lang"
+	_Charset       = "blog_charset"
 )
 
 // SpamStatus represents the result of a spam check.

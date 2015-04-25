@@ -95,19 +95,11 @@ func (c *Comment) Reset() {
 	}
 }
 
-// SetApplication updates the user agent sent to Akismet in API calls.
-// The preferred format is application name/version, e.g.
-//
-//    MyApplication/1.0
-func (c *Comment) SetApplication(s string) {
-	c.api.SetApplication(s)
-}
-
-// SetDebugWriter specifies a Writer object for debug output. When set,
+// DebugTo specifies a Writer object for debug output. When provided,
 // the writer will be used to log the HTTP requests and responses sent
 // to and received from Akismet.
-func (c *Comment) SetDebugWriter(writer io.Writer) {
-	c.api.writer = writer
+func (c *Comment) DebugTo(writer io.Writer) {
+	c.api.SetDebugWriter(writer)
 }
 
 // SetType specifies the type of content being checked for spam. The default
@@ -135,15 +127,15 @@ func (c *Comment) SetReferer(s string) {
 	c.set(_Referer, s)
 }
 
-// SetPermalink specifies the URL of the page where the comment was entered.
-func (c *Comment) SetPermalink(s string) {
-	c.set(_Permalink, s)
+// SetPage specifies the URL of the page where the comment was entered.
+func (c *Comment) SetPage(s string) {
+	c.set(_Page, s)
 }
 
-// SetArticleTime specifies the publish date of the page where the comment
-// was entered.
-func (c *Comment) SetArticleTime(t time.Time) {
-	c.set(_ArticleTime, formatTime(t))
+// SetPageTimestamp specifies the publish date of the page where the
+// comment was entered.
+func (c *Comment) SetPageTimestamp(t time.Time) {
+	c.set(_PageTimestamp, formatTime(t))
 }
 
 // SetAuthor specifies the name submitted by the commenter.
@@ -166,10 +158,10 @@ func (c *Comment) SetContent(s string) {
 	c.set(_Content, s)
 }
 
-// SetCreateTime specifies the creation time of the comment. If this is not
-// set, Akismet defaults to the time of the API call.
-func (c *Comment) SetCreateTime(t time.Time) {
-	c.set(_CreateTime, formatTime(t))
+// SetTimestamp specifies the creation time of the comment. If this
+// is not provided, Akismet defaults to the time of the API call.
+func (c *Comment) SetTimestamp(t time.Time) {
+	c.set(_Timestamp, formatTime(t))
 }
 
 // SetSiteLanguage specifies the language(s) in use on the site where the

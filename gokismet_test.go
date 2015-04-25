@@ -87,7 +87,7 @@ func defaultParams() url.Values {
 		_UserIP:    {config.IP},
 		_UserAgent: {config.UserAgent},
 		_Referer:   {"http://www.google.com"},
-		_Permalink: {config.Article},
+		_Page:      {config.Article},
 		_Author:    {"gokismet tester"},
 		_Type:      {"comment"},
 		_Email:     {"hello@example.com"},
@@ -288,7 +288,7 @@ func TestCommentCheck(t *testing.T) {
 	// Set up a non-spam comment
 	comment.SetUserIP(config.IP)
 	comment.SetUserAgent(config.UserAgent)
-	comment.SetPermalink(config.Article)
+	comment.SetPage(config.Article)
 	comment.SetAuthor("gokismet test")
 	comment.SetEmail("hello@example.com")
 	comment.SetContent("This is an example comment that does not contain anything spammy. In the absence of other settings Akismet should return a negative (non-spam) response for this comment. Cheers...")

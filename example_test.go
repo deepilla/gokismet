@@ -66,7 +66,7 @@ func ExampleComment() {
 	// Set your comment data
 	comment.SetUserIP("127.0.0.1")
 	comment.SetUserAgent("Mozilla/5.0 (Windows; U; Windows NT 6.1; en-US; rv:1.9.2) Gecko/20100115 Firefox/3.6")
-	comment.SetPermalink("http://www.yourwebsite.com/2015/05/05/its-cinco-de-mayo/")
+	comment.SetPage("http://www.yourwebsite.com/2015/05/05/its-cinco-de-mayo/")
 	comment.SetAuthor("A. Commenter")
 	comment.SetEmail("acommenter@aol.com")
 	comment.SetURL("http://www.lovecincodemayo.com")
