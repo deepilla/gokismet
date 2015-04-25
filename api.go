@@ -80,33 +80,32 @@ var errKeyNotVerified = errors.New("API key has not been verified")
 // An APIError represents an error or unexpected result encountered
 // during a call to the Akismet API.
 type APIError struct {
-	// A freeform description of the error
+	// Reason is a freeform description of the error
 	Reason string
-	// The value returned by Akismet in the response body
+	// Result is the value returned by Akismet in the response body
 	Result string
-	// Additional info from the X-akismet-debug-help response header
+	// Help is the value of the X-akismet-debug-help response header
 	Help string
-	// Additional info from the X-akismet-error response header
-	Message string
-	// Additional info from the X-akismet-alert-code response header
+	// Err is the value of the X-akismet-error response header
+	Err string
+	// AlertCode is the value of the X-akismet-alert-code response header
 	AlertCode string
-	// Additional info from the X-akismet-alert-msg response header
+	// AlertMessage is the value of the X-akismet-alert-msg response header
 	AlertMessage string
 }
 
-// NewAPIErrorFromHeader returns a new APIError populated with the provided
-// reason and result, plus any additional information from the provided
-// response header.
-func NewAPIErrorFromHeader(reason string, result string, header *http.Header) APIError {
+// NewAPIError returns a new APIError populated with the provided reason and
+// result, plus any additional information from the provided response header.
+func NewAPIError(reason string, result string, header *http.Header) APIError {
 	return APIError{
 		Reason: reason,
 		Result: result,
 		// Store any additional info from the Akismet response headers
 		Help: header.Get("X-Akismet-Debug-Help"),
 		// The following header values are undocumented. It's not clear
-		// why they're returned or what values they contain. So for now
-		// we're storing them without using them.
-		Message:      header.Get("X-Akismet-Error"),
+		// why or when they're returned or what values they contain. So
+		// for now we're storing them without using them.
+		Err:          header.Get("X-Akismet-Error"),
 		AlertCode:    header.Get("X-Akismet-Alert-Code"),
 		AlertMessage: header.Get("X-Akismet-Alert-Msg"),
 	}
@@ -208,7 +207,7 @@ func (api *API) VerifyKey(key string, site string) error {
 	}
 
 	// Any other return value indicates a failure
-	return NewAPIErrorFromHeader("Akismet didn't verify key "+key, result, &header)
+	return NewAPIError("Akismet didn't verify key "+key, result, &header)
 }
 
 // CheckComment checks a comment for spam. It takes a set of query parameters
@@ -262,7 +261,7 @@ func (api *API) CheckComment(params *url.Values) (SpamStatus, error) {
 
 	// Any other return value indicates a failure
 	return StatusUnknown,
-		NewAPIErrorFromHeader("Akismet comment check failed", result, &header)
+		NewAPIError("Akismet comment check failed", result, &header)
 }
 
 // SubmitSpam notifies Akismet of a spam comment that it failed to catch
@@ -317,7 +316,7 @@ func (api *API) submit(path string, params *url.Values) error {
 	}
 
 	// Any other return value indicates failure
-	return NewAPIErrorFromHeader("Akismet "+getMethod(path)+" failed", result, &header)
+	return NewAPIError("Akismet "+strings.Replace(method, "-", " ", -1)+" failed", result, &header)
 }
 
 // buildRequestURL constructs the URL for an Akismet API call given a
