@@ -8,18 +8,19 @@ import (
 	"time"
 )
 
-// A Comment represents a blog comment to be checked for spam. The zero-value
-// object is not guaranteed to work. Always use one of the constructors to
-// create your Comment objects.
+// A Comment represents an item of user-generated comment to be checked for
+// spam, such as a blog comment or forum post. The zero-value object is not
+// guaranteed to work. Always use one of the constructors to create Comments.
 type Comment struct {
 	api    *API
 	params *url.Values
 }
 
-// NewComment creates a Comment object with the provided Akismet API key
-// and website. The key and website are verified with Akismet and stored
-// for use in subsequent calls to Check, ReportSpam and ReportNotSpam. A
-// non-nil error is returned if verification fails.
+// NewComment creates a Comment with the provided Akismet API key and
+// website. The key and website are verified with Akismet and stored
+// for use in subsequent calls to Check, ReportSpam and ReportNotSpam. If
+// Akismet fails to verify your key, NewComment returns a nil pointer and
+// a non-nil error.
 //
 // NewComment takes an optional third argument, the name of your application.
 // If provided it will be sent to Akismet as part of the user agent in any
@@ -34,8 +35,8 @@ func NewComment(key string, site string, appName ...string) (*Comment, error) {
 	return new(NewAPI, key, site, appName...)
 }
 
-// NewTestComment creates a Comment object in test mode, meaning that Akismet
-// will not learn and adapt its behaviour based on the object's API calls.
+// NewTestComment creates a Comment in test mode, meaning that Akismet
+// will not learn and adapt its behaviour based on the Comment's API calls.
 // Use this version of the constructor for development and testing.
 //
 // As with NewComment, the provided API key and website are verified with
@@ -49,10 +50,10 @@ func NewTestComment(key string, site string, appName ...string) (*Comment, error
 }
 
 // new does the heavy lifting for NewComment and NewTestComment.
-// It initialises a new Comment object and verifies the provided Akismet
-// API key. It will also optionally set the user agent on the api member.
-// If everything works you get a new Comment object, otherwise you get nil
-// and a non-nil error object.
+// It initialises a new Comment and verifies the provided Akismet API key.
+// It will also optionally set the user agent on the api member. If
+// everything works you get a new Comment, otherwise you get nil and
+// a non-nil error object.
 func new(newapi func() *API, key string, site string, appName ...string) (*Comment, error) {
 
 	// Create a new Comment
@@ -92,13 +93,13 @@ func new(newapi func() *API, key string, site string, appName ...string) (*Comme
 //
 // The Akismet docs advise sending as much information about a comment as
 // possible. The more data you provide, the more accurate the results. In
-// particular, the commenter's IP address must be included (Check will fail
+// particular, the commenter's IP address must be set (Check will fail
 // without it) and the user agent is highly recommended.
 func (c *Comment) Check() (SpamStatus, error) {
 	return c.api.CheckComment(c.params)
 }
 
-// ReportSpam notifies Akismet that a comment it thought was legitimate is
+// ReportSpam notifies Akismet that something it thought was legitimate is
 // actually spam. This implies that a previous call to Check returned
 // StatusNotSpam. When calling ReportSpam you should provide as much of the
 // comment data from the original Check call as possible. You may not be
@@ -108,8 +109,8 @@ func (c *Comment) ReportSpam() error {
 	return c.api.SubmitSpam(c.params)
 }
 
-// ReportNotSpam notifies Akismet that a comment it thought was spam is actually
-// a legitimate comment. This implies that a previous call to Check returned
+// ReportNotSpam notifies Akismet that something it thought was spam is
+// actually legitimate. This implies that a previous call to Check returned
 // StatusProbableSpam or StatusDefiniteSpam. When calling ReportNotSpam you
 // should provide as much of the comment data from the original Check call as
 // possible. You may not be able to resend everything, but any values you do
@@ -118,8 +119,8 @@ func (c *Comment) ReportNotSpam() error {
 	return c.api.SubmitHam(c.params)
 }
 
-// Reset reverts a Comment object to its initial state (i.e. just after
-// the call to NewComment or NewTestComment).
+// Reset reverts a Comment to its initial state (i.e. just after the call
+// to NewComment or NewTestComment).
 func (c *Comment) Reset() {
 	c.params = &url.Values{
 		_Site: {c.params.Get(_Site)},
@@ -127,9 +128,9 @@ func (c *Comment) Reset() {
 	}
 }
 
-// DebugTo specifies a Writer object for debug output. When provided,
-// the writer will be used to log the HTTP requests and responses sent
-// to and received from Akismet.
+// DebugTo provides a Writer for debug output. Once set, the writer will
+// be used to log all HTTP requests sent to Akismet and all HTTP responses
+// received. For development and testing only!
 func (c *Comment) DebugTo(writer io.Writer) {
 	c.api.SetDebugWriter(writer)
 }
@@ -191,19 +192,20 @@ func (c *Comment) SetContent(s string) {
 }
 
 // SetTimestamp specifies the creation time of the comment. If this
-// is not provided, Akismet defaults to the time of the API call.
+// is not provided, Akismet uses the time of the API call.
 func (c *Comment) SetTimestamp(t time.Time) {
 	c.set(_Timestamp, formatTime(t))
 }
 
-// SetSiteLanguage specifies the language(s) in use on the site where the
-// commented was entered. Format is ISO 639-1, comma-separated, e.g. "en, fr_ca".
+// SetSiteLanguage specifies the language(s) in use on the site
+// where the comment was entered. Format is ISO 639-1, comma-separated
+// (e.g. "en, fr_ca").
 func (c *Comment) SetSiteLanguage(s string) {
 	c.set(_SiteLanguage, s)
 }
 
-// SetCharset specifies the character encoding for the comment data,
-// e.g. "UTF-8" or "ISO-8859-1".
+// SetCharset specifies the character encoding for the comment data
+// (e.g. "UTF-8" or "ISO-8859-1").
 func (c *Comment) SetCharset(s string) {
 	c.set(_Charset, s)
 }
