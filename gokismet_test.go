@@ -269,14 +269,8 @@ func TestCommentNew(t *testing.T) {
 	// object instead of initialising the global.
 	comment, err = NewTestComment(config.APIKey, config.Site)
 	if err != nil {
-		// We can't continue without a Comment object
-		t.Fatalf("CommentNew failed: %s", err.Error())
+		t.Errorf("CommentNew failed: %s", err.Error())
 	}
-	// This call is needed to make the code compile. But it highlights
-	// the fact that we're not debugging the comment object (unlike the
-	// api object). By debugging one object and not the other we test
-	// both the logging and non-logging code paths.
-	api.SetDebugWriter(nil)
 }
 
 func TestCommentCheck(t *testing.T) {
