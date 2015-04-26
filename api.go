@@ -43,11 +43,13 @@ const (
 // SpamStatus represents the result of a spam check.
 type SpamStatus uint
 
-// These are the possible spam statuses. Akismet distinguishes between two
-// types of spam: normal spam and "pervasive" spam. Pervasive spam is the
-// worst, most blatant type of spam (see http://blog.akismet.com/2014/04/23/theres-a-ninja-in-your-akismet/
-// for more info). Gokismet represents that distinction with the statuses
-// ProbableSpam and DefiniteSpam.
+// These are the possible spam statuses. There are two statuses for spam
+// because Akismet divides spam into two types: normal and "pervasive".
+// Pervasive spam is the really blatant stuff.
+//
+// See http://blog.akismet.com/2014/04/23/theres-a-ninja-in-your-akismet/
+// for more on this distinction and how pervasive spam is treated in
+// WordPress.
 const (
 	// StatusUnknown is a default status indicating an error
 	StatusUnknown SpamStatus = iota
