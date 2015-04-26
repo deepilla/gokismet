@@ -1,7 +1,6 @@
 package gokismet
 
 import (
-	"errors"
 	"io"
 	"net/url"
 	"strings"
@@ -21,18 +20,21 @@ type Comment struct {
 // for use in subsequent calls to Check, ReportSpam and ReportNotSpam. If
 // Akismet fails to verify your key, NewComment returns a nil pointer and
 // a non-nil error.
+func NewComment(key string, site string) (*Comment, error) {
+	return new(NewAPI, key, site, "")
+}
+
+// NewCommentUA is identical to NewComment but it allows you to specify
+// a user agent to send to Akismet in API calls. The user agent should
+// be the name of your application, preferably in the format Application/Version,
+// e.g.
 //
-// NewComment takes an optional third argument, the name of your application.
-// If provided it will be sent to Akismet as part of the user agent in any
-// API calls. The preferred format is application name/version, e.g.
+//		MyApplication/1.0
 //
-//     comment, err := gokismet.NewComment("YOUR_API_KEY", "http://yourwebsite.com", "YourApplication/1.0")
-//
-// Omit the application name to use the default user agent of "Gokismet/1.0".
-//
-//     comment, err := gokismet.NewComment("YOUR_API_KEY", "http://yourwebsite.com")
-func NewComment(key string, site string, appName ...string) (*Comment, error) {
-	return new(NewAPI, key, site, appName...)
+// Note: This is distinct from SetUserAgent which specifies the commenter's
+// user agent for a specific comment.
+func NewCommentUA(key string, site string, userAgent string) (*Comment, error) {
+	return new(NewAPI, key, site, userAgent)
 }
 
 // NewTestComment creates a Comment in test mode, meaning that Akismet
@@ -42,21 +44,30 @@ func NewComment(key string, site string, appName ...string) (*Comment, error) {
 // As with NewComment, the provided API key and website are verified with
 // Akismet and stored for subsequent calls to Check, ReportSpam and
 // ReportNotSpam. A non-nil error is returned if verification fails.
-//
-// NewTestComment also supports the optional application name argument (see
-// NewComment).
-func NewTestComment(key string, site string, appName ...string) (*Comment, error) {
-	return new(NewTestAPI, key, site, appName...)
+func NewTestComment(key string, site string) (*Comment, error) {
+	return new(NewTestAPI, key, site, "")
 }
 
-// new does the heavy lifting for NewComment and NewTestComment.
-// It initialises a new Comment and verifies the provided Akismet API key.
-// It will also optionally set the user agent on the api member. If
-// everything works you get a new Comment, otherwise you get nil and
-// a non-nil error object.
-func new(newapi func() *API, key string, site string, appName ...string) (*Comment, error) {
+// NewTestCommentUA is identical to NewTestComment but it allows you to
+// specify a user agent to send to Akismet in API calls. The user agent
+// should be the name of your application, preferably in the format
+// Application/Version, e.g.
+//
+//		MyApplication/1.0
+//
+// Note: This is distinct from SetUserAgent which specifies the commenter's
+// user agent for a specific comment.
+func NewTestCommentUA(key string, site string, userAgent string) (*Comment, error) {
+	return new(NewTestAPI, key, site, userAgent)
+}
 
-	// Create a new Comment
+// new does the heavy lifting for the various versions of the Comment
+// constructor. It initialises a new Comment, sets its user agent, and
+// verifies the provided Akismet API key. If the key is verified, new
+// returns the new Comment, otherwise it returns nil with a non-nil error
+// object.
+func new(newapi func() *API, key string, site string, userAgent string) (*Comment, error) {
+
 	comment := &Comment{
 		api: newapi(),
 		params: &url.Values{
@@ -65,21 +76,9 @@ func new(newapi func() *API, key string, site string, appName ...string) (*Comme
 		},
 	}
 
-	// Optionally set the user agent
-	switch len(appName) {
-	case 0:
-		// No name provided - do nothing
-	case 1:
-		// Name provided - use it to set the user agent
-		comment.api.SetUserAgent(appName[0])
-	default:
-		// More than one name provided - fail
-		return nil, errors.New("multiple app names passed to NewComment: expected 0 or 1")
-	}
+	comment.api.SetUserAgent(userAgent)
 
-	// Verify the API key and website
-	err := comment.api.VerifyKey(key, site)
-	if err != nil {
+	if err := comment.api.VerifyKey(key, site); err != nil {
 		return nil, err
 	}
 
