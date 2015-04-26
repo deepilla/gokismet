@@ -45,7 +45,7 @@ const (
 type SpamStatus uint
 
 // These are the possible spam statuses. There are two statuses for spam
-// because Akismet divides spam into two types: normal and "pervasive".
+// because Akismet splits spam into two types: normal and "pervasive".
 // Pervasive spam is the really blatant stuff.
 //
 // See http://blog.akismet.com/2014/04/23/theres-a-ninja-in-your-akismet/
@@ -62,8 +62,8 @@ const (
 	StatusDefiniteSpam
 )
 
-// String returns a human-readable description of a SpamStatus
-// (useful for error-handling or debugging).
+// String returns a human-readable description of a SpamStatus, e.g.
+// for error-handling or debugging.
 func (s SpamStatus) String() string {
 	switch s {
 	case StatusUnknown:
@@ -97,8 +97,8 @@ type APIError struct {
 	AlertMessage string
 }
 
-// NewAPIError returns a new APIError populated with the provided reason and
-// result, plus any additional information from the provided response header.
+// NewAPIError returns a new APIError populated with the supplied reason
+// and result, plus any additional information from the response header.
 func NewAPIError(reason string, result string, header *http.Header) APIError {
 	return APIError{
 		Reason: reason,
@@ -293,8 +293,8 @@ func (api *API) SubmitHam(params *url.Values) error {
 	return api.submit("submit-ham", params)
 }
 
-// submit does the heavy lifting for SubmitHam and SubmitSpam. The provided
-// method name determines whether the comment data described in the query
+// submit does the heavy lifting for SubmitHam and SubmitSpam. The method
+// name determines whether the comment data described in the query
 // parameters is submitted as spam or ham. The returned error is non-nil
 // in the event of an error.
 func (api *API) submit(method string, params *url.Values) error {
@@ -345,7 +345,7 @@ func (api *API) buildRequestURL(method string, qualified bool) string {
 // parameters.
 func (api *API) buildRequest(u string, params *url.Values) (*http.Request, error) {
 
-	// Get a new Request
+	// Create a new Request
 	req, err := http.NewRequest("POST", u, strings.NewReader(params.Encode()))
 	if err != nil {
 		return nil, err
@@ -426,9 +426,11 @@ func (api *API) execute(u string, params *url.Values) (result string, header htt
 }
 
 // writeAndRestore writes a Request or a Response to the supplied
-// Writer. Unlike Request.Write and Response.Write, it preserves the
-// request/response body. The way it does this is pretty ugly but
-// this function should only ever be called during development/debugging.
+// Writer. Unlike Request.Write and Response.Write, it restores the
+// request/response body to its previous state afterwards. It's an
+// ugly hack but it allows us to output the HTTP info for debugging
+// purposes without having to worry about the side effects. And if
+// people heed the docs it will only ever be called in development.
 func writeAndRestore(writer io.Writer, r interface{}) error {
 
 	var body *io.ReadCloser

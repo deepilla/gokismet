@@ -26,8 +26,8 @@ func NewComment(key string, site string) (*Comment, error) {
 
 // NewCommentUA is identical to NewComment but it allows you to specify
 // a user agent to send to Akismet in API calls. The user agent should
-// be the name of your application, preferably in the format Application/Version,
-// e.g.
+// be the name of your application, preferably in the format application
+// name/version, e.g.
 //
 //		MyApplication/1.0
 //
@@ -51,7 +51,7 @@ func NewTestComment(key string, site string) (*Comment, error) {
 // NewTestCommentUA is identical to NewTestComment but it allows you to
 // specify a user agent to send to Akismet in API calls. The user agent
 // should be the name of your application, preferably in the format
-// Application/Version, e.g.
+// application name/version, e.g.
 //
 //		MyApplication/1.0
 //
