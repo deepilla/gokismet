@@ -428,8 +428,8 @@ func (api *API) execute(u string, params *url.Values) (result string, header htt
 // writeAndRestore writes a Request or a Response to the supplied
 // Writer. Unlike Request.Write and Response.Write, it restores the
 // request/response body to its previous state afterwards. It's an
-// ugly hack but it allows us to output the HTTP info for debugging
-// purposes without having to worry about the side effects. And if
+// ugly hack but it allows us to output the HTTP info (for debugging
+// purposes) without having to worry about the side effects. And if
 // people heed the docs it will only ever be called in development.
 func writeAndRestore(writer io.Writer, r interface{}) error {
 
@@ -437,27 +437,25 @@ func writeAndRestore(writer io.Writer, r interface{}) error {
 	var write func(io.Writer) error
 
 	// Get the body and write function from the Request/Response
-	switch r.(type) {
+	switch r := r.(type) {
 	case *http.Request:
-		req := r.(*http.Request)
-		body = &req.Body
-		write = req.Write
+		body = &r.Body
+		write = r.Write
 	case *http.Response:
-		resp := r.(*http.Response)
-		body = &resp.Body
-		write = resp.Write
+		body = &r.Body
+		write = r.Write
 	default:
 		// Any type other than Request or Response is a no-op
 		return nil
 	}
 
-	// Get the interface type
-	// Do some basic formatting, e.g. "*http.Response" becomes "Response"
+	// Get the type name and apply some basic formatting
+	// e.g. "*http.Response" becomes "Response"
 	s := strings.Split(reflect.TypeOf(r).String(), ".")
 	typ := s[len(s)-1]
 
-	// Start by reading the body into a buffer. We'll use this buffer
-	// to restore the body after any destructive read or write operations
+	// Read the body into a buffer. We'll use this buffer to restore
+	// the body after any destructive read or write operations
 	buf, err := ioutil.ReadAll(*body)
 	if err != nil {
 		return err
