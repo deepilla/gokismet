@@ -18,6 +18,7 @@ func ExampleAPI() {
 	err := api.VerifyKey("YOUR_API_KEY", "http://yourwebsite.com")
 	if err != nil {
 		// Handle the error
+		fmt.Println(err)
 		return
 	}
 
@@ -38,6 +39,7 @@ func ExampleAPI() {
 	status, err := api.CheckComment(&params)
 	if err != nil {
 		// Handle the error
+		fmt.Println(err)
 		return
 	}
 
@@ -60,6 +62,7 @@ func ExampleComment() {
 	comment, err := gokismet.NewComment("YOUR_API_KEY", "http://www.yourwebsite.com")
 	if err != nil {
 		// Handle the error
+		fmt.Println(err)
 		return
 	}
 
@@ -76,6 +79,7 @@ func ExampleComment() {
 	status, err := comment.Check()
 	if err != nil {
 		// Handle the error
+		fmt.Println(err)
 		return
 	}
 
