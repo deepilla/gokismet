@@ -7,6 +7,7 @@ import (
 	"io/ioutil"
 	"net/http"
 	"net/url"
+	"reflect"
 	"strings"
 )
 
@@ -373,8 +374,7 @@ func (api *API) doRequest(req *http.Request) (*http.Response, error) {
 // execute queries the Akismet API and returns the response body and header.
 // It takes an Akismet endpoint URL and a set of query parameters.
 //
-// execute uses named return arguments - they make returning 3 values
-// a bit tidier.
+// execute uses named return values to make returning 3 things a bit tidier.
 func (api *API) execute(u string, params *url.Values) (result string, header http.Header, err error) {
 
 	// Are we in test mode?
@@ -391,7 +391,7 @@ func (api *API) execute(u string, params *url.Values) (result string, header htt
 
 	// ...output it to the debugger...
 	if api.writer != nil {
-		err = writeRequest(api.writer, req)
+		err = writeAndRestore(api.writer, req)
 		if err != nil {
 			return
 		}
@@ -405,7 +405,7 @@ func (api *API) execute(u string, params *url.Values) (result string, header htt
 
 	// Output the Response to the debugger...
 	if api.writer != nil {
-		err = writeResponse(api.writer, resp)
+		err = writeAndRestore(api.writer, resp)
 		if err != nil {
 			return
 		}
@@ -419,62 +419,65 @@ func (api *API) execute(u string, params *url.Values) (result string, header htt
 		return
 	}
 
-	// Finally, set the return values and bounce
+	// Finally, set the return values and exit
 	result = string(body)
 	header = resp.Header
 	return
 }
 
-// writeRequest writes an HTTP Request to the supplied Writer. Unlike
-// Request.Write it restores Request.Body to its former state afterwards.
-func writeRequest(writer io.Writer, req *http.Request) error {
-	_, err := io.WriteString(writer, "\n\n[REQUEST]\n")
+// writeAndRestore writes a Request or a Response to the supplied
+// Writer. Unlike Request.Write and Response.Write, it preserves the
+// request/response body. The way it does this is pretty ugly but
+// this function should only ever be called during development/debugging.
+func writeAndRestore(writer io.Writer, r interface{}) error {
+
+	var body *io.ReadCloser
+	var write func(io.Writer) error
+
+	// Get the body and write function from the Request/Response
+	switch r.(type) {
+	case *http.Request:
+		req := r.(*http.Request)
+		body = &req.Body
+		write = req.Write
+	case *http.Response:
+		resp := r.(*http.Response)
+		body = &resp.Body
+		write = resp.Write
+	default:
+		// Any type other than Request or Response is a no-op
+		return nil
+	}
+
+	// Get the interface type
+	// Do some basic formatting, e.g. "*http.Response" becomes "Response"
+	s := strings.Split(reflect.TypeOf(r).String(), ".")
+	typ := s[len(s)-1]
+
+	// Start by reading the body into a buffer. We'll use this buffer
+	// to restore the body after any destructive read or write operations
+	buf, err := ioutil.ReadAll(*body)
 	if err != nil {
 		return err
 	}
-	return writeAndRestore(writer, req.Write, &req.Body)
-}
 
-// writeResponse writes an HTTP Response to the supplied Writer. Unlike
-// Response.Write it restores Response.Body to its former state afterwards.
-func writeResponse(writer io.Writer, resp *http.Response) error {
-	_, err := io.WriteString(writer, "\n\n[RESPONSE]\n")
-	if err != nil {
-		return err
-	}
-	return writeAndRestore(writer, resp.Write, &resp.Body)
-}
+	// Restore the body after the call to ReadAll
+	restoreBody(body, buf)
 
-// writeAndRestore does the heavy lifting for writeRequest and writeResponse.
-// It's a hack that allows Request and Response objects to be written out
-// without killing the [Request|Response].Body. It's ugly but it should only
-// be used during development/debugging only.
-//
-// TODO: Come up with a more elegant way to do this!
-func writeAndRestore(writer io.Writer, write func(io.Writer) error, rc *io.ReadCloser) error {
-
-	// Start by reading the ReadCloser into a buffer. We'll use
-	// the buffer to restore the ReadCloser after any destructive
-	// read or write operations...
-	buf, err := ioutil.ReadAll(*rc)
+	// Output a header line before the call to Write
+	_, err = io.WriteString(writer, "\n\n["+strings.ToUpper(typ)+"]\n")
 	if err != nil {
 		return err
 	}
 
-	// ...like the one we just did. The ReadCloser is now closed
-	// thanks to ReadAll. We need to restore it before attempting
-	// a write.
-	setRC(rc, buf)
-
-	// Now we can call the write function. But first we schedule
-	// a restore on function exit because we know that the write
-	// function will close the ReadCloser again.
-	defer setRC(rc, buf)
+	// Now call Write, but first schedule a restore on function exit
+	// (because Write will close the body again)
+	defer restoreBody(body, buf)
 	return write(writer)
 }
 
-// setRC initialises a ReadCloser using the supplied buffer.
-// It can be called repeatedly without issues.
-func setRC(rc *io.ReadCloser, buf []byte) {
-	*rc = ioutil.NopCloser(bytes.NewReader(buf))
+// restoreBody resets the body of a Request/Response to buf
+// after it has been closed by a read or write operation.
+func restoreBody(body *io.ReadCloser, buf []byte) {
+	*body = ioutil.NopCloser(bytes.NewReader(buf))
 }
