@@ -39,13 +39,13 @@ var config settings
 
 // Test entry point
 func TestMain(m *testing.M) {
-	// Read the settings file
-	b, err := ioutil.ReadFile("testconfig.json")
+	// Open the settings file
+	f, err := os.Open("testconfig.json")
 	if err != nil {
 		os.Exit(errMissingConfig)
 	}
 	// Use the contents to populate the settings struct
-	err = json.Unmarshal(b, &config)
+	err = json.NewDecoder(f).Decode(&config)
 	if err != nil {
 		os.Exit(errInvalidConfig)
 	}
