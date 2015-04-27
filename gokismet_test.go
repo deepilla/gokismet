@@ -5,7 +5,9 @@ import (
 	"io/ioutil"
 	"net/url"
 	"os"
+	"strings"
 	"testing"
+	"time"
 )
 
 const (
@@ -108,10 +110,45 @@ func checkTestModeCleanup(t *testing.T, testName string, params *url.Values) {
 	}
 }
 
+func checkKeyNotVerifiedError(t *testing.T, testName string, methodName string, err error) {
+	if err == nil {
+		// There's no error to check - throw an error and return
+		t.Errorf("%s fail: %s succeeded without a verified key", testName, methodName)
+		return
+	}
+	if err != errKeyNotVerified {
+		t.Errorf("%s fail: %s returned unexpected error %s", testName, methodName, err.Error())
+	}
+}
+
+func checkMissingFieldError(t *testing.T, testName string, methodName string, err error, fieldNames ...string) {
+	if err == nil {
+		// There's no error to check - throw an error and return
+		t.Errorf("%s fail: %s succeeded with missing fields %s", testName, methodName, strings.Join(fieldNames, ", "))
+		return
+	}
+
+	e, ok := err.(APIError)
+	if !ok {
+		// We don't have the right type of error to check - throw an error and return
+		t.Errorf("%s fail: %s returned '%s', expected 'Missing required field: %s.'", testName, methodName, err.Error(), strings.Join(fieldNames, " or "))
+		return
+	}
+
+	for _, field := range fieldNames {
+		if e.Result == "Missing required field: "+field+"." {
+			// Success! We got the error message we expected - return with no error
+			return
+		}
+	}
+
+	t.Errorf("%s fail: %s returned '%s', expected 'Missing required field: %s.'", testName, methodName, e.Result, strings.Join(fieldNames, " or "))
+}
+
 func checkSpamStatus(t *testing.T, testName string, expectedStatus SpamStatus, status SpamStatus, err error) {
 	if err != nil {
+		// We don't have a spam status to check - throw an error and return
 		t.Errorf("%s fail: %s", testName, err.Error())
-		// No need to check the return value if the call failed
 		return
 	}
 	if status != expectedStatus {
@@ -124,21 +161,15 @@ func TestAPIKeyNotVerified(t *testing.T) {
 
 	// CheckComment should fail if the API key isn't verified
 	_, err := api.CheckComment(&params)
-	if err != errKeyNotVerified {
-		t.Errorf("APIKeyNotVerified returned unexpected %s", err.Error())
-	}
+	checkKeyNotVerifiedError(t, "APIKeyNotVerified", "CheckComment", err)
 
 	// SubmitSpam should fail if the API key isn't verified
 	err = api.SubmitSpam(&params)
-	if err != errKeyNotVerified {
-		t.Errorf("APIKeyNotVerified returned unexpected %s", err.Error())
-	}
+	checkKeyNotVerifiedError(t, "APIKeyNotVerified", "SubmitSpam", err)
 
 	// SubmitHam should fail if the API key isn't verified
 	err = api.SubmitHam(&params)
-	if err != errKeyNotVerified {
-		t.Errorf("APIKeyNotVerified returned unexpected %s", err.Error())
-	}
+	checkKeyNotVerifiedError(t, "APIKeyNotVerified", "SubmitHam", err)
 }
 
 // Test key verification
@@ -216,9 +247,7 @@ func TestAPICheckRequired(t *testing.T) {
 	params.Del(_UserIP)
 
 	_, err = api.CheckComment(&params)
-	if err == nil {
-		t.Errorf("APICheckRequired fail: call succeeded without blog or user ip set")
-	}
+	checkMissingFieldError(t, "APICheckRequired", "CheckComment", err, _Site, _UserIP)
 
 	// Missing: blog
 	// Should throw an error
@@ -226,9 +255,7 @@ func TestAPICheckRequired(t *testing.T) {
 	params.Del(_Site)
 
 	_, err = api.CheckComment(&params)
-	if err == nil {
-		t.Errorf("APICheckRequired fail: call succeeded without blog set")
-	}
+	checkMissingFieldError(t, "APICheckRequired", "CheckComment", err, _Site)
 
 	// Missing: ip
 	// Should throw an error
@@ -236,18 +263,16 @@ func TestAPICheckRequired(t *testing.T) {
 	params.Del(_UserIP)
 
 	_, err = api.CheckComment(&params)
-	if err == nil {
-		t.Errorf("APICheckRequired fail: call succeeded without user ip set")
-	}
+	checkMissingFieldError(t, "APICheckRequired", "CheckComment", err, _UserIP)
 
 	// Missing: user agent
-	// Should NOT thrown an error
+	// Should NOT throw an error
 	params = defaultParams()
 	params.Del(_UserAgent)
 
 	_, err = api.CheckComment(&params)
 	if err != nil {
-		t.Errorf("APICheckRequired fail: call failed without user agent set")
+		t.Errorf("APICheckRequired fail: CheckComment failed with missing fields: %s", _UserAgent)
 	}
 }
 
@@ -293,8 +318,10 @@ func TestCommentNew(t *testing.T) {
 	// object instead of initialising the global.
 	comment, err = NewTestComment(config.APIKey, config.Site)
 	if err != nil {
-		t.Errorf("CommentNew fail: %s", err.Error())
+		// We can't continue without a Comment object
+		t.Fatalf("CommentNew fail: %s", err.Error())
 	}
+	//comment.DebugTo(os.Stdout)
 }
 
 func TestCommentCheck(t *testing.T) {
@@ -306,10 +333,18 @@ func TestCommentCheck(t *testing.T) {
 	// Set up a non-spam comment
 	comment.SetUserIP(config.IP)
 	comment.SetUserAgent(config.UserAgent)
+	comment.SetReferer("http://www.google.com")
 	comment.SetPage(config.Article)
+	// Set article timestamp to 1 month ago
+	comment.SetPageTimestamp(time.Now().AddDate(0, -1, 0))
 	comment.SetAuthor("gokismet test")
 	comment.SetEmail("hello@example.com")
-	comment.SetContent("This is an example comment that does not contain anything spammy. In the absence of other settings Akismet should return a negative (non-spam) response for this comment. Cheers...")
+	comment.SetContent("This is an example comment that does not contain anything spammy. In the absence of other dodgy settings Akismet should return a negative (non-spam) response...")
+	comment.SetURL("http://www.example.com")
+	// Set comment timestamp to current time
+	comment.SetTimestamp(time.Now())
+	comment.SetSiteLanguage("en_us")
+	comment.SetCharset("UTF-8")
 
 	// And test it
 	status, err := comment.Check()
@@ -321,6 +356,13 @@ func TestCommentCheck(t *testing.T) {
 	// And test again
 	status, err = comment.Check()
 	checkSpamStatus(t, "CommentCheck", StatusProbableSpam, status, err)
+
+	// Make the comment non-spammy again
+	comment.SetAuthor("gokismet-test")
+
+	// And test a final time
+	status, err = comment.Check()
+	checkSpamStatus(t, "CommentCheck", StatusNotSpam, status, err)
 }
 
 func TestCommentReport(t *testing.T) {
