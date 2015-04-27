@@ -21,7 +21,7 @@ type Comment struct {
 // Akismet fails to verify your key, NewComment returns a nil pointer and
 // a non-nil error.
 func NewComment(key string, site string) (*Comment, error) {
-	return new(NewAPI, key, site, "")
+	return new(key, site, false, "")
 }
 
 // NewCommentUA is identical to NewComment but it allows you to specify
@@ -34,18 +34,19 @@ func NewComment(key string, site string) (*Comment, error) {
 // Note: This is distinct from SetUserAgent which specifies the commenter's
 // user agent for a specific comment.
 func NewCommentUA(key string, site string, userAgent string) (*Comment, error) {
-	return new(NewAPI, key, site, userAgent)
+	return new(key, site, false, userAgent)
 }
 
-// NewTestComment creates a Comment in test mode, meaning that Akismet
-// will not learn and adapt its behaviour based on the Comment's API calls.
-// Use this version of the constructor for development and testing.
+// NewTestComment creates a Comment in test mode. This tells Akismet
+// not to learn from or adapt to any API calls it receives, making
+// tests somewhat repeatable. Test mode is recommended (but not
+// required) for development.
 //
 // As with NewComment, the provided API key and website are verified with
 // Akismet and stored for subsequent calls to Check, ReportSpam and
 // ReportNotSpam. A non-nil error is returned if verification fails.
 func NewTestComment(key string, site string) (*Comment, error) {
-	return new(NewTestAPI, key, site, "")
+	return new(key, site, true, "")
 }
 
 // NewTestCommentUA is identical to NewTestComment but it allows you to
@@ -58,7 +59,7 @@ func NewTestComment(key string, site string) (*Comment, error) {
 // Note: This is distinct from SetUserAgent which specifies the commenter's
 // user agent for a specific comment.
 func NewTestCommentUA(key string, site string, userAgent string) (*Comment, error) {
-	return new(NewTestAPI, key, site, userAgent)
+	return new(key, site, true, userAgent)
 }
 
 // new does the heavy lifting for the various versions of the Comment
@@ -66,17 +67,18 @@ func NewTestCommentUA(key string, site string, userAgent string) (*Comment, erro
 // verifies the provided Akismet API key. If the key is verified, new
 // returns the new Comment, otherwise it returns nil with a non-nil error
 // object.
-func new(newapi func() *API, key string, site string, userAgent string) (*Comment, error) {
+func new(key string, site string, testMode bool, userAgent string) (*Comment, error) {
 
 	comment := &Comment{
-		api: newapi(),
+		api: &API{
+			TestMode:  testMode,
+			UserAgent: userAgent,
+		},
 		params: &url.Values{
 			_Site: {site},
 			_Type: {"comment"},
 		},
 	}
-
-	comment.api.SetUserAgent(userAgent)
 
 	if err := comment.api.VerifyKey(key, site); err != nil {
 		return nil, err
@@ -131,7 +133,7 @@ func (c *Comment) Reset() {
 // be used to log all HTTP requests sent to Akismet and all HTTP responses
 // received. For development and testing only!
 func (c *Comment) DebugTo(writer io.Writer) {
-	c.api.SetDebugWriter(writer)
+	c.api.DebugWriter = writer
 }
 
 // SetType specifies the type of content being checked for spam. The default

@@ -65,16 +65,18 @@ func TestMain(m *testing.M) {
 		config.Article = u.String()
 	}
 
-	// Create the API object
-	api = NewTestAPI()
-	// Set up the debugger
+	// Set up a debug writer. Even if we're not debugging, set
+	// a dummy Writer object. That way we still test the logging
+	// code path (we're just not outputting anything).
+	debugger := ioutil.Discard
 	if config.Debug {
-		api.SetDebugWriter(os.Stdout)
-	} else {
-		// Even if we're not debugging, still set a dummy Writer object.
-		// That way we're still testing the logging code path. We're just
-		// not outputting anything.
-		api.SetDebugWriter(ioutil.Discard)
+		debugger = os.Stdout
+	}
+
+	// Create the API object
+	api = &API{
+		TestMode:    true,
+		DebugWriter: debugger,
 	}
 
 	// Run the tests
@@ -93,6 +95,16 @@ func defaultParams() url.Values {
 		_Email:     {"hello@example.com"},
 		_URL:       {"http://www.example.com"},
 		_Content:   {"This is an example comment that does not contain anything spammy. In the absence of other settings Akismet should return a negative (non-spam) response for this comment. Cheers..."},
+	}
+}
+
+func checkTestModeCleanup(t *testing.T, testName string, params *url.Values) {
+	// Our global API object has TestMode = true
+	// This means that an "is_test" parameter is added to the query
+	// when calling the Akismet API. But it should be removed after
+	// the call so we shouldn't see any sign of it now.
+	if params.Get("is_test") != "" {
+		t.Errorf("%s fail: Test Mode flag has not been removed", testName)
 	}
 }
 
@@ -160,6 +172,9 @@ func TestAPICheckSpam(t *testing.T) {
 	// And test again
 	status, err = api.CheckComment(&params)
 	checkSpamStatus(t, "APICheckSpam", StatusDefiniteSpam, status, err)
+
+	// Check that the test mode parameter is being cleaned up
+	checkTestModeCleanup(t, "APICheckSpam", &params)
 }
 
 // To simulate a negative (not spam) result, make a comment-check API call
@@ -178,6 +193,9 @@ func TestAPICheckHam(t *testing.T) {
 	// And test them
 	status, err := api.CheckComment(&params)
 	checkSpamStatus(t, "APICheckHam", StatusNotSpam, status, err)
+
+	// Check that the test mode parameter is being cleaned up
+	checkTestModeCleanup(t, "APICheckHam", &params)
 }
 
 // According to the Akismet docs, blog, user_ip and user_agent are required
@@ -246,6 +264,9 @@ func TestAPISubmitSpam(t *testing.T) {
 	if err != nil {
 		t.Errorf("APISubmitSpam (no params) fail: %s", err.Error())
 	}
+
+	// Check that the test mode parameter is being cleaned up
+	checkTestModeCleanup(t, "APISubmitSpam", &params)
 }
 
 func TestAPISubmitHam(t *testing.T) {
@@ -261,6 +282,9 @@ func TestAPISubmitHam(t *testing.T) {
 	if err != nil {
 		t.Errorf("APISubmitHam (no params) fail: %s", err.Error())
 	}
+
+	// Check that the test mode parameter is being cleaned up
+	checkTestModeCleanup(t, "APISubmitHam", &params)
 }
 
 func TestCommentNew(t *testing.T) {

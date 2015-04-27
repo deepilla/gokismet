@@ -127,65 +127,38 @@ func (e APIError) Error() string {
 }
 
 // An API is a thin wrapper around the methods of the Akismet REST API.
-// While it can be used directly, the Comment class is more convenient
-// in most cases.
-//
-// The zero value API object is not guaranteed to work. Clients should
-// use one of the constructors to create new APIs.
+// While it can be used directly, the Comment class is usually more
+// convenient.
 type API struct {
-	// The Akismet API key
-	key string
-	// The user agent passed to Akismet in API calls
-	userAgent string
 	// Whether or not to call Akismet in test mode. In test mode,
-	// Akismet won't adapt its behaviour to your API calls.
-	testMode bool
-	// A writer for debugging. When provided, any Akismet requests
-	// and responses will be logged to it.
-	writer io.Writer
-}
+	// Akismet doesn't learn and adapt based on your API calls,
+	// making them somewhat repeatable. It's recommended (but
+	// not required) for development.
+	TestMode bool
 
-// NewAPI returns a new API.
-func NewAPI() *API {
-	return &API{
-		userAgent: defaultUserAgent,
-	}
-}
+	// A Writer for debugging. When provided, all Akismet requests
+	// and responses will be logged to it. This is meant for
+	// development and testing only. It should not be used in
+	// Production code.
+	DebugWriter io.Writer
 
-// NewTestAPI returns a new API in test mode. API calls made in test mode
-// do not trigger Akismet's "learning" behaviour, making tests somewhat
-// repeatable. Test mode is recommended (but not required) for development
-// and testing.
-func NewTestAPI() *API {
-	api := NewAPI()
-	api.testMode = true
-	return api
-}
+	// A user agent to send to Akismet in API calls. This should
+	// be the name of your application, preferably in the format
+	// application name/version, e.g. "MyApplication/1.0". When
+	// left unset, the default user agent of "Gokismet/1.0" is
+	// used.
+	UserAgent string
 
-// SetUserAgent updates the user agent sent to Akismet in API calls.
-// The preferred format is application name/version, e.g.
-//
-//    MyApplication/1.0
-func (api *API) SetUserAgent(name string) {
-	if s := strings.TrimSpace(name); s != "" {
-		api.userAgent = s + " | " + defaultUserAgent
-	}
-}
-
-// SetDebugWriter specifies a Writer for debug output. When set, the
-// writer will be used to log any HTTP requests and responses sent to
-// and received from Akismet. For development and testing only!
-func (api *API) SetDebugWriter(writer io.Writer) {
-	api.writer = writer
+	// The Akismet API key, set in VerifyKey. Deliberately not
+	// exported so that clients are forced to verify their keys.
+	key string
 }
 
 // VerifyKey validates an API key with Akismet. It takes the key to be
 // validated and the homepage url of the website where the key will be
 // used. If verification succeeds, VerifyKey returns nil and stores the
 // key for subsequent API calls. Otherwise, a non-nil error is returned.
-//
-// Note: VerifyKey must be called before CheckComment, SubmitSpam
-// or SubmitHam.
+// Must be called before CheckComment, SubmitSpam or SubmitHam.
 //
 // See http://akismet.com/development/api/#verify-key for more info.
 func (api *API) VerifyKey(key string, site string) error {
@@ -324,12 +297,9 @@ func (api *API) submit(method string, params *url.Values) error {
 // domain with the API key.
 func (api *API) buildRequestURL(method string, qualified bool) string {
 
-	var host string
-
-	if qualified == true {
-		host = api.key + "." + akismetHost
-	} else {
-		host = akismetHost
+	host := akismetHost
+	if qualified {
+		host = api.key + "." + host
 	}
 
 	u := url.URL{
@@ -351,8 +321,15 @@ func (api *API) buildRequest(u string, params *url.Values) (*http.Request, error
 		return nil, err
 	}
 
+	// Assemble the request user agent
+	ua := strings.TrimSpace(api.UserAgent)
+	if ua != "" {
+		ua += " | "
+	}
+	ua += defaultUserAgent
+
 	// Customise the request headers
-	req.Header.Set("User-Agent", api.userAgent)
+	req.Header.Set("User-Agent", ua)
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 
 	return req, nil
@@ -379,8 +356,10 @@ func (api *API) execute(u string, params *url.Values) (result string, header htt
 
 	// Are we in test mode?
 	// If so, we need to add an extra parameter to the request
-	if api.testMode == true {
+	if api.TestMode && params.Get("is_test") == "" {
 		params.Set("is_test", "1")
+		// Remove it afterwards so there are no side effects
+		defer params.Del("is_test")
 	}
 
 	// Construct a Request...
@@ -390,8 +369,8 @@ func (api *API) execute(u string, params *url.Values) (result string, header htt
 	}
 
 	// ...output it to the debugger...
-	if api.writer != nil {
-		err = writeAndRestore(api.writer, req)
+	if api.DebugWriter != nil {
+		err = writeAndRestore(api.DebugWriter, req)
 		if err != nil {
 			return
 		}
@@ -404,8 +383,8 @@ func (api *API) execute(u string, params *url.Values) (result string, header htt
 	}
 
 	// Output the Response to the debugger...
-	if api.writer != nil {
-		err = writeAndRestore(api.writer, resp)
+	if api.DebugWriter != nil {
+		err = writeAndRestore(api.DebugWriter, resp)
 		if err != nil {
 			return
 		}

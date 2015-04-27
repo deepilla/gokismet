@@ -12,7 +12,7 @@ func ExampleAPI() {
 	// Example: Using API to check a comment for spam
 
 	// Create a new API
-	api := gokismet.NewAPI()
+	api := &gokismet.API{}
 
 	// Verify your API key with Akismet
 	err := api.VerifyKey("YOUR_API_KEY", "http://yourwebsite.com")
