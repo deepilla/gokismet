@@ -132,24 +132,25 @@ func (e APIError) Error() string {
 type API struct {
 	// Whether or not to call Akismet in test mode. In test mode,
 	// Akismet doesn't learn and adapt based on your API calls,
-	// making them somewhat repeatable. It's recommended (but
-	// not required) for development.
+	// making them somewhat repeatable. Test mode is recommended
+	// (but not required) for development and testing.
 	TestMode bool
 
-	// A Writer for debugging. When provided, all Akismet requests
-	// and responses will be logged to it. This is meant for
-	// development and testing only. It should not be used in
-	// Production code.
+	// A Writer for debugging. If set to a non-nil value,
+	// any Akismet requests and responses are logged to it.
+	// Provided as a convenience for development and testing
+	// only. It should not be enabled in Production code.
 	DebugWriter io.Writer
 
 	// A user agent to send to Akismet in API calls. This should
-	// be the name of your application, preferably in the format
-	// application name/version, e.g. "MyApplication/1.0". When
-	// left unset, the default user agent of "Gokismet/1.0" is
+	// be the name of the calling application, preferably in the
+	// format application name/version, e.g. "MyApplication/1.0".
+	// If left unset, the default user agent of "Gokismet/1.0" is
 	// used.
 	UserAgent string
 
-	// The Akismet API key, set in VerifyKey. Deliberately not
+	// The Akismet API key, set in VerifyKey and required for calls
+	// to CheckComment, SubmitSpam and SubmitHam. Deliberately not
 	// exported so that clients are forced to verify their keys.
 	key string
 }

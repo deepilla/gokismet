@@ -24,14 +24,14 @@ func NewComment(key string, site string) (*Comment, error) {
 	return new(key, site, false, "")
 }
 
-// NewCommentUA is identical to NewComment but it allows you to specify
+// NewCommentUA is identical to NewComment except it allows you to specify
 // a user agent to send to Akismet in API calls. The user agent should
 // be the name of your application, preferably in the format application
 // name/version, e.g.
 //
 //		MyApplication/1.0
 //
-// Note: This is distinct from SetUserAgent which specifies the commenter's
+// Note: This is distinct from SetUserAgent which sets the commenter's
 // user agent for a specific comment.
 func NewCommentUA(key string, site string, userAgent string) (*Comment, error) {
 	return new(key, site, false, userAgent)
@@ -49,14 +49,14 @@ func NewTestComment(key string, site string) (*Comment, error) {
 	return new(key, site, true, "")
 }
 
-// NewTestCommentUA is identical to NewTestComment but it allows you to
+// NewTestCommentUA is identical to NewTestComment except it allows you to
 // specify a user agent to send to Akismet in API calls. The user agent
 // should be the name of your application, preferably in the format
 // application name/version, e.g.
 //
 //		MyApplication/1.0
 //
-// Note: This is distinct from SetUserAgent which specifies the commenter's
+// Note: This is distinct from SetUserAgent which sets the commenter's
 // user agent for a specific comment.
 func NewTestCommentUA(key string, site string, userAgent string) (*Comment, error) {
 	return new(key, site, true, userAgent)
@@ -100,28 +100,28 @@ func (c *Comment) Check() (SpamStatus, error) {
 	return c.api.CheckComment(c.params)
 }
 
-// ReportSpam notifies Akismet that something it thought was legitimate is
-// actually spam. This implies that a previous call to Check returned
-// StatusNotSpam. When calling ReportSpam you should provide as much of the
-// comment data from the original Check call as possible. You may not be
-// able to resend everything, but any values you do send should be identical
-// to the previous values.
+// ReportSpam tells Akismet that something it thought was legitimate
+// content is actually spam. This implies that a previous call to Check
+// returned StatusNotSpam. When calling ReportSpam you should provide as
+// much of the comment data from the original Check call as possible.
+// You may not be able to resend everything, but any values you do send
+// should be identical to the previous values.
 func (c *Comment) ReportSpam() error {
 	return c.api.SubmitSpam(c.params)
 }
 
-// ReportNotSpam notifies Akismet that something it thought was spam is
-// actually legitimate. This implies that a previous call to Check returned
-// StatusProbableSpam or StatusDefiniteSpam. When calling ReportNotSpam you
-// should provide as much of the comment data from the original Check call as
-// possible. You may not be able to resend everything, but any values you do
-// send should be identical to the previous values.
+// ReportNotSpam tells Akismet that something it thought was spam is
+// actually legitimate content. This implies that a previous call to Check
+// returned StatusProbableSpam or StatusDefiniteSpam. When calling ReportNotSpam
+// you should provide as much of the comment data from the original Check call
+// as possible. You may not be able to resend everything, but any values you
+// do send should be identical to the previous values.
 func (c *Comment) ReportNotSpam() error {
 	return c.api.SubmitHam(c.params)
 }
 
 // Reset reverts a Comment to its initial state (i.e. just after the call
-// to NewComment or NewTestComment).
+// to NewComment, NewTestComment etc).
 func (c *Comment) Reset() {
 	c.params = &url.Values{
 		_Site: {c.params.Get(_Site)},
@@ -129,9 +129,10 @@ func (c *Comment) Reset() {
 	}
 }
 
-// DebugTo provides a Writer for debug output. Once set, the writer will
-// be used to log all HTTP requests sent to Akismet and all HTTP responses
-// received. For development and testing only!
+// DebugTo specifies a Writer for debug output. Any HTTP requests sent to
+// Akismet and HTTP responses received from Akismet will be logged to this
+// Writer. As the name suggests, you should only enable this feature during
+// development.
 func (c *Comment) DebugTo(writer io.Writer) {
 	c.api.DebugWriter = writer
 }
