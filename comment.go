@@ -11,8 +11,8 @@ import (
 // spam, such as a blog comment or forum post. The zero-value object is not
 // guaranteed to work. Always use one of the constructors to create Comments.
 type Comment struct {
-	api    *API
-	params *url.Values
+	api    API
+	params url.Values
 }
 
 // NewComment creates a Comment with the provided Akismet API key and
@@ -70,11 +70,11 @@ func NewTestCommentUA(key string, site string, userAgent string) (*Comment, erro
 func new(key string, site string, testMode bool, userAgent string) (*Comment, error) {
 
 	comment := &Comment{
-		api: &API{
+		api: API{
 			TestMode:  testMode,
 			UserAgent: userAgent,
 		},
-		params: &url.Values{
+		params: url.Values{
 			_Site: {site},
 			_Type: {"comment"},
 		},
@@ -97,7 +97,7 @@ func new(key string, site string, testMode bool, userAgent string) (*Comment, er
 // particular, the commenter's IP address must be set (Check will fail
 // without it) and the user agent is highly recommended.
 func (c *Comment) Check() (SpamStatus, error) {
-	return c.api.CheckComment(c.params)
+	return c.api.CheckComment(&c.params)
 }
 
 // ReportSpam tells Akismet that something it thought was legitimate
@@ -107,7 +107,7 @@ func (c *Comment) Check() (SpamStatus, error) {
 // You may not be able to resend everything, but any values you do send
 // should be identical to the previous values.
 func (c *Comment) ReportSpam() error {
-	return c.api.SubmitSpam(c.params)
+	return c.api.SubmitSpam(&c.params)
 }
 
 // ReportNotSpam tells Akismet that something it thought was spam is
@@ -117,13 +117,13 @@ func (c *Comment) ReportSpam() error {
 // as possible. You may not be able to resend everything, but any values you
 // do send should be identical to the previous values.
 func (c *Comment) ReportNotSpam() error {
-	return c.api.SubmitHam(c.params)
+	return c.api.SubmitHam(&c.params)
 }
 
 // Reset reverts a Comment to its initial state (i.e. just after the call
 // to NewComment, NewTestComment etc).
 func (c *Comment) Reset() {
-	c.params = &url.Values{
+	c.params = url.Values{
 		_Site: {c.params.Get(_Site)},
 		_Type: {c.params.Get(_Type)},
 	}
