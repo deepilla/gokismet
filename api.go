@@ -409,9 +409,9 @@ func (api *API) execute(u string, params *url.Values) (result string, header htt
 // Writer. Unlike Request.Write and Response.Write, it restores the
 // request/response body to its previous state afterwards. It's an
 // ugly hack but it allows us to output the HTTP info (for debugging
-// purposes) without having to worry about the side effects. And if
+// purposes) without having to worry about the side effects. If
 // people heed the docs it will only ever be called in development.
-func writeAndRestore(writer io.Writer, r interface{}) error {
+func writeAndRestore(w io.Writer, r interface{}) error {
 
 	var body *io.ReadCloser
 	var write func(io.Writer) error
@@ -429,13 +429,14 @@ func writeAndRestore(writer io.Writer, r interface{}) error {
 		return nil
 	}
 
-	// Get the type name and apply some basic formatting
+	// Get the type name and apply some basic formatting so that
 	// e.g. "*http.Response" becomes "Response"
 	s := strings.Split(reflect.TypeOf(r).String(), ".")
 	typ := s[len(s)-1]
 
-	// Read the body into a buffer. We'll use this buffer to restore
-	// the body after any destructive read or write operations
+	// Use our one and only read to save the body into a buffer.
+	// We'll use this buffer to restore the body after any
+	// destructive read or write operations
 	buf, err := ioutil.ReadAll(*body)
 	if err != nil {
 		return err
@@ -445,7 +446,7 @@ func writeAndRestore(writer io.Writer, r interface{}) error {
 	restoreBody(body, buf)
 
 	// Output a header line before the call to Write
-	_, err = io.WriteString(writer, "\n\n["+strings.ToUpper(typ)+"]\n")
+	_, err = io.WriteString(w, "\n\n["+strings.ToUpper(typ)+"]\n")
 	if err != nil {
 		return err
 	}
@@ -453,7 +454,7 @@ func writeAndRestore(writer io.Writer, r interface{}) error {
 	// Now call Write, but first schedule a restore on function exit
 	// (because Write will close the body again)
 	defer restoreBody(body, buf)
-	return write(writer)
+	return write(w)
 }
 
 // restoreBody resets the body of a Request/Response to buf
