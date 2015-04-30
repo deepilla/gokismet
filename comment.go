@@ -9,7 +9,8 @@ import (
 
 // A Comment represents an item of user-generated comment to be checked for
 // spam, such as a blog comment or forum post. The zero-value object is not
-// guaranteed to work. Always use one of the constructors to create Comments.
+// guaranteed to work. Clients should use one of the constructors to
+// create Comments.
 type Comment struct {
 	api    API
 	params url.Values
@@ -17,17 +18,17 @@ type Comment struct {
 
 // NewComment creates a Comment with the provided Akismet API key and
 // website. The key and website are verified with Akismet and stored
-// for use in subsequent calls to Check, ReportSpam and ReportNotSpam. If
-// Akismet fails to verify your key, NewComment returns a nil pointer and
-// a non-nil error.
+// for use in subsequent calls to Check, ReportSpam and ReportNotSpam.
+// If Akismet is unable to verify the key, NewComment returns a nil
+// pointer and a non-nil error.
 func NewComment(key string, site string) (*Comment, error) {
 	return new(key, site, false, "")
 }
 
-// NewCommentUA is identical to NewComment except it allows you to specify
-// a user agent to send to Akismet in API calls. The user agent should
-// be the name of your application, preferably in the format application
-// name/version, e.g.
+// NewCommentUA is identical to NewComment except for a third argument
+// allowing clients to specify the user agent sent in Akismet API requests.
+// The user agent should be the name of the client application, preferably
+// in the format application name/version number, e.g.
 //
 //		MyApplication/1.0
 //
@@ -37,10 +38,10 @@ func NewCommentUA(key string, site string, userAgent string) (*Comment, error) {
 	return new(key, site, false, userAgent)
 }
 
-// NewTestComment creates a Comment in test mode. This tells Akismet
-// not to learn from or adapt to any API calls it receives, making
-// tests somewhat repeatable. Test mode is recommended (but not
-// required) for development.
+// NewTestComment creates a Comment in test mode. This tells Akismet not
+// to learn from or adapt to any API calls it receives, making tests
+// somewhat repeatable. Test mode is recommended (but not required) for
+// development.
 //
 // As with NewComment, the provided API key and website are verified with
 // Akismet and stored for subsequent calls to Check, ReportSpam and
@@ -49,10 +50,10 @@ func NewTestComment(key string, site string) (*Comment, error) {
 	return new(key, site, true, "")
 }
 
-// NewTestCommentUA is identical to NewTestComment except it allows you to
-// specify a user agent to send to Akismet in API calls. The user agent
-// should be the name of your application, preferably in the format
-// application name/version, e.g.
+// NewTestCommentUA is identical to NewTestComment except for a third
+// argument allowing clients to specify the user agent sent in Akismet API
+// requests. The user agent should be the name of the client application,
+// preferably in the format application name/version number, e.g.
 //
 //		MyApplication/1.0
 //
@@ -65,8 +66,7 @@ func NewTestCommentUA(key string, site string, userAgent string) (*Comment, erro
 // new does the heavy lifting for the various versions of the Comment
 // constructor. It initialises a new Comment, sets its user agent, and
 // verifies the provided Akismet API key. If the key is verified, new
-// returns the new Comment, otherwise it returns nil with a non-nil error
-// object.
+// returns the new Comment, otherwise it returns nil and a non-nil error.
 func new(key string, site string, testMode bool, userAgent string) (*Comment, error) {
 
 	comment := &Comment{
@@ -87,10 +87,10 @@ func new(key string, site string, testMode bool, userAgent string) (*Comment, er
 	return comment, nil
 }
 
-// Check sends a Comment to Akismet for spam checking. If the call is
-// successful, the returned status is one of StatusNotSpam,
-// StatusProbableSpam or StatusDefiniteSpam and the returned error is nil.
-// Otherwise, Check returns StatusUnknown and a non-nil error.
+// Check sends a Comment to Akismet for spam checking. If the call succeeds,
+// the returned status is one of StatusNotSpam, StatusProbableSpam or
+// StatusDefiniteSpam and the returned error is nil. Otherwise, Check returns
+// StatusUnknown and a non-nil error.
 //
 // The Akismet docs advise sending as much information about a comment as
 // possible. The more data you provide, the more accurate the results. In
@@ -129,12 +129,14 @@ func (c *Comment) Reset() {
 	}
 }
 
-// DebugTo specifies a Writer for debug output. Any HTTP requests sent to
-// Akismet and HTTP responses received from Akismet will be logged to this
-// Writer. As the name suggests, you should only enable this feature during
-// development.
-func (c *Comment) DebugTo(writer io.Writer) {
-	c.api.DebugWriter = writer
+// LogTo specifies a Writer for logging HTTP requests and responses. All
+// requests sent to Akismet and responses received from Akismet are logged
+// to the provided Writer.
+//
+// Note: LogTo is provided as a convenience for development and testing only.
+// It should not be used in Production.
+func (c *Comment) LogTo(w io.Writer) {
+	c.api.Output = w
 }
 
 // SetType specifies the type of content being checked for spam. The default

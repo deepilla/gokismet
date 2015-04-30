@@ -97,8 +97,8 @@ type APIError struct {
 	AlertMessage string
 }
 
-// NewAPIError returns a new APIError populated with the supplied reason
-// and result, plus any additional information from the response header.
+// NewAPIError returns a new APIError populated with the given reason and
+// result, plus any additional information from the provided response header.
 func NewAPIError(reason string, result string, header *http.Header) APIError {
 	return APIError{
 		Reason: reason,
@@ -127,27 +127,28 @@ func (e APIError) Error() string {
 }
 
 // An API is a thin wrapper around the methods of the Akismet REST API.
-// While it can be used directly, the Comment class is usually more
-// convenient.
+// While it can be used directly, Comment is more convenient and the
+// better choice in most cases.
 type API struct {
+
+	// A user agent to pass to Akismet in the HTTP request header.
+	// This should be the name of the client application, in the
+	// format application name/version number, e.g. "MyApplication/1.0".
+	// If left unset, a default value of "Gokismet/1.0" is used.
+	UserAgent string
+
 	// Whether or not to call Akismet in test mode. In test mode,
 	// Akismet doesn't learn and adapt based on your API calls,
 	// making them somewhat repeatable. Test mode is recommended
 	// (but not required) for development and testing.
 	TestMode bool
 
-	// A Writer for debugging. If set to a non-nil value,
-	// any Akismet requests and responses are logged to it.
-	// Provided as a convenience for development and testing
-	// only. It should not be enabled in Production code.
-	DebugWriter io.Writer
-
-	// A user agent to send to Akismet in API calls. This should
-	// be the name of the calling application, preferably in the
-	// format application name/version, e.g. "MyApplication/1.0".
-	// If left unset, the default user agent of "Gokismet/1.0" is
-	// used.
-	UserAgent string
+	// A Writer for logging HTTP requests and responses. If set to
+	// a non-nil value, all requests to and responses from Akismet
+	// are written to it. This is provided as a convenience for
+	// development and testing only. It should not be enabled in
+	// Production code.
+	Output io.Writer
 
 	// The Akismet API key, set in VerifyKey and required for calls
 	// to CheckComment, SubmitSpam and SubmitHam. Deliberately not
@@ -195,18 +196,16 @@ func (api *API) VerifyKey(key string, site string) error {
 // You must make a successful call to VerifyKey before calling CheckComment.
 //
 // See http://akismet.com/development/api/#comment-check for a list of
-// possible query parameters. According to the docs the following parameters
-// are required:
+// possible query parameters. The following parameters are required:
 //
 //     blog           // the website where the comment was entered
 //     user_ip        // the ip address of the commenter
+//
+// The following parameter is highly recommended:
+//
 //     user_agent     // the user agent of the commenter's browser
 //
-// In practice only the website and IP address are genuinely required.
-// CheckComment will fail if either is missing. User agent is not
-// mandatory but it's highly advised. Akismet's results may be less
-// accurate if it's not provided. Best practice is to provide as much
-// data about the comment as possible.
+// Best practice is to provide as much comment information as possible.
 func (api *API) CheckComment(params *url.Values) (SpamStatus, error) {
 
 	if api.key == "" {
@@ -245,8 +244,13 @@ func (api *API) CheckComment(params *url.Values) (SpamStatus, error) {
 // (just like CheckComment) and returns a non-nil error if it fails.
 //
 // See http://akismet.com/development/api/#submit-spam for the Akismet
-// documentation. Contrary to the docs, there are no required parameters
-// for SubmitSpam but blog, user_id and user_agent are highly recommended.
+// documentation. This method has no required query parameters but the
+// following are highly recommended:
+//
+//     blog           // the website where the comment was entered
+//     user_ip        // the ip address of the commenter
+//     user_agent     // the user agent of the commenter's browser
+//
 // Best practice is to supply as many of the parameters that were
 // originally sent to CheckComment as possible.
 func (api *API) SubmitSpam(params *url.Values) error {
@@ -259,8 +263,13 @@ func (api *API) SubmitSpam(params *url.Values) error {
 // it fails.
 //
 // See http://akismet.com/development/api/#submit-ham for the Akismet
-// documentation. Contrary to the docs, there are no required parameters
-// for SubmitHam but blog, user_id and user_agent are highly recommended.
+// documentation. This method has no required query parameters but the
+// following are highly recommended:
+//
+//     blog           // the website where the comment was entered
+//     user_ip        // the ip address of the commenter
+//     user_agent     // the user agent of the commenter's browser
+//
 // Best practice is to supply as many of the parameters that were
 // originally sent to CheckComment as possible.
 func (api *API) SubmitHam(params *url.Values) error {
@@ -268,9 +277,9 @@ func (api *API) SubmitHam(params *url.Values) error {
 }
 
 // submit does the heavy lifting for SubmitHam and SubmitSpam. The method
-// name determines whether the comment data described in the query
-// parameters is submitted as spam or ham. The returned error is non-nil
-// in the event of an error.
+// determines whether the comment data described in the query parameters
+// is submitted as spam or ham. The returned error is non-nil in the event
+// of an error.
 func (api *API) submit(method string, params *url.Values) error {
 
 	if api.key == "" {
@@ -312,7 +321,7 @@ func (api *API) buildRequestURL(method string, qualified bool) string {
 	return u.String()
 }
 
-// buildRequest constructs an HTTP Request from a url and a set of request
+// buildRequest constructs an HTTP Request from the given url and query
 // parameters.
 func (api *API) buildRequest(u string, params *url.Values) (*http.Request, error) {
 
@@ -339,8 +348,8 @@ func (api *API) buildRequest(u string, params *url.Values) (*http.Request, error
 // doRequest executes an HTTP Request and returns the Response.
 func (api *API) doRequest(req *http.Request) (*http.Response, error) {
 
-	// Use the http package's default client
-	// to execute the request
+	// Use the default client from the http package to execute our
+	// request. That's what helper functions like http.Get do.
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		return nil, err
@@ -351,44 +360,37 @@ func (api *API) doRequest(req *http.Request) (*http.Response, error) {
 
 // execute queries the Akismet API and returns the response body and header.
 // It takes an Akismet endpoint URL and a set of query parameters.
-//
-// execute uses named return values to make returning 3 things a bit tidier.
-func (api *API) execute(u string, params *url.Values) (result string, header http.Header, err error) {
+func (api *API) execute(u string, params *url.Values) (string, http.Header, error) {
 
-	// Are we in test mode?
-	// If so, we need to add an extra parameter to the request
+	// In test mode we need to add an extra parameter to our request
+	// but we'll remove it on exit so there are no side effects
 	if api.TestMode && params.Get("is_test") == "" {
 		params.Set("is_test", "1")
-		// Remove it afterwards so there are no side effects
 		defer params.Del("is_test")
 	}
 
 	// Construct a Request...
 	req, err := api.buildRequest(u, params)
 	if err != nil {
-		return
+		return "", nil, err
 	}
 
 	// ...output it to the debugger...
-	if api.DebugWriter != nil {
-		err = writeAndRestore(api.DebugWriter, req)
-		if err != nil {
-			return
-		}
+	err = api.log(req)
+	if err != nil {
+		return "", nil, err
 	}
 
 	// ...and execute it
 	resp, err := api.doRequest(req)
 	if err != nil {
-		return
+		return "", nil, err
 	}
 
 	// Output the Response to the debugger...
-	if api.DebugWriter != nil {
-		err = writeAndRestore(api.DebugWriter, resp)
-		if err != nil {
-			return
-		}
+	err = api.log(resp)
+	if err != nil {
+		return "", nil, err
 	}
 
 	// ... and then read the response body
@@ -396,13 +398,19 @@ func (api *API) execute(u string, params *url.Values) (result string, header htt
 	defer resp.Body.Close()
 	body, err := ioutil.ReadAll(resp.Body)
 	if err != nil {
-		return
+		return "", nil, err
 	}
 
-	// Finally, set the return values and exit
-	result = string(body)
-	header = resp.Header
-	return
+	return string(body), resp.Header, nil
+}
+
+// log writes the provided Request or Response to the designated output
+// Writer, if supplied. It should have no side effects on the Request/Response.
+func (api *API) log(r interface{}) error {
+	if api.Output != nil {
+		return writeAndRestore(api.Output, r)
+	}
+	return nil
 }
 
 // writeAndRestore writes a Request or a Response to the supplied
