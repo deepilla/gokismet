@@ -70,6 +70,7 @@ func initConfig() int {
 	if err != nil {
 		return codeMissingConfig
 	}
+	defer f.Close()
 	// Use the contents to populate the settings struct
 	err = json.NewDecoder(f).Decode(&config)
 	if err != nil {
