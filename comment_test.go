@@ -101,8 +101,8 @@ func TestCommentCreate(t *testing.T) {
 }
 
 // Confirm that the Set... functions work as expected.
-// Note: The values used in this function should be non-spammy - we'll check
-// them for spam in later tests and we expect a negative result.
+// Note: The values used in this function should be non-spammy as we check
+// this object for spam in the next test and we expect a negative result.
 func TestCommentParameters(t *testing.T) {
 	var s string
 	var ts time.Time
@@ -112,18 +112,21 @@ func TestCommentParameters(t *testing.T) {
 		t.Fatalf("%s fail: The global Comment object has not been initialised.", getFunctionName(1))
 	}
 
-	comment.SetUserIP(config.IP)
-	assert_StringParameterEquals(t, comment, "user_ip", config.IP)
+	s = config.IP
+	comment.SetUserIP(s)
+	assert_StringParameterEquals(t, comment, "user_ip", s)
 
-	comment.SetUserAgent(config.UserAgent)
-	assert_StringParameterEquals(t, comment, "user_agent", config.UserAgent)
+	s = config.UserAgent
+	comment.SetUserAgent(s)
+	assert_StringParameterEquals(t, comment, "user_agent", s)
 
 	s = "http://www.google.com"
 	comment.SetReferer(s)
 	assert_StringParameterEquals(t, comment, "referrer", s)
 
-	comment.SetPage(config.Article)
-	assert_StringParameterEquals(t, comment, "permalink", config.Article)
+	s = config.Article
+	comment.SetPage(s)
+	assert_StringParameterEquals(t, comment, "permalink", s)
 
 	// Set article timestamp to 1 month ago
 	ts = time.Now().AddDate(0, -1, 0)
@@ -137,7 +140,7 @@ func TestCommentParameters(t *testing.T) {
 	// Specifiying the email address has side effects. It seems to make
 	// the following submit-ham call work, so when this test is run more
 	// than once, the spammy comment is not detected as spam any more.
-	// We can get round this by using a different email for the submit
+	// We can get around this by using a different email for the submit
 	// tests.
 	s = "check@example.com"
 	comment.SetEmail(s)
@@ -197,7 +200,7 @@ func TestCommentReport(t *testing.T) {
 		t.Fatalf("%s fail: The global Comment object has not been initialised.", getFunctionName(1))
 	}
 
-	// Reset the email address, otherwise these calls might
+	// Change the email address, otherwise these calls might
 	// affect subsequent calls to Comment.Check.
 	comment.SetEmail("submit@example.com")
 
