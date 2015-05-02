@@ -17,8 +17,8 @@ func assert_CommentObjectIsValid(
 	t *testing.T, method string, comment *Comment, err error, testMode bool, userAgent string) {
 
 	if err != nil {
-		t.Errorf("%s fail: %s returned %s", getFunctionName(2), method, err)
 		// We can't continue without a Comment object
+		t.Fatalf("%s fail: %s returned '%s'", getFunctionName(2), method, err)
 		return
 	}
 	// Check that the site is correctly set
