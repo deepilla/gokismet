@@ -121,7 +121,7 @@ func (e APIError) Error() string {
 		err += " Result: " + e.Result + "."
 	}
 	if e.Help != "" {
-		err += " Info: " + e.Help + "."
+		err += " Help: " + e.Help + "."
 	}
 	return err
 }
