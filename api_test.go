@@ -132,7 +132,7 @@ func defaultParams() url.Values {
 // Our global API object is in test mode. An is_test flag is added to the
 // query parameters for any method call. Check that the flag is being
 // cleaned up afterwards (i.e. deleted from the query parameters).
-func assert_ParamsDoNotContainTestFlag(t *testing.T, method string, params *url.Values) {
+func assertParamsDoNotContainTestFlag(t *testing.T, method string, params *url.Values) {
 	if params.Get("is_test") != "" {
 		t.Errorf("%s fail: Test Mode flag was not removed after calling %s", getFunctionName(2), method)
 	}
@@ -141,7 +141,7 @@ func assert_ParamsDoNotContainTestFlag(t *testing.T, method string, params *url.
 // The main API methods will not work unless an Akismet API key has been
 // verified. Check that those methods fail before verification. We should
 // get an errKeyNotVerified error.
-func assert_MethodFailsBeforeVerify(t *testing.T, method string, err error) {
+func assertMethodFailsBeforeVerify(t *testing.T, method string, err error) {
 	if err == nil {
 		t.Errorf("%s fail: %s succeeded without a verified key", getFunctionName(2), method)
 		return
@@ -154,7 +154,7 @@ func assert_MethodFailsBeforeVerify(t *testing.T, method string, err error) {
 // If an Akismet API call has required parameters, check that the
 // corresponding gokismet.API method fails without those parameters.
 // We should get a "Missing required field" APIError error.
-func assert_MethodFailsWithoutRequiredField(t *testing.T, method string, err error, fields ...string) {
+func assertMethodFailsWithoutRequiredField(t *testing.T, method string, err error, fields ...string) {
 	if err == nil {
 		t.Errorf("%s fail: %s succeeded with missing fields %s",
 			getFunctionName(2),
@@ -182,7 +182,7 @@ func assert_MethodFailsWithoutRequiredField(t *testing.T, method string, err err
 }
 
 // Check that a spam check returned the spam status we expect.
-func assert_SpamStatusEquals(t *testing.T, method string, expected, status SpamStatus, err error) {
+func assertSpamStatusEquals(t *testing.T, method string, expected, status SpamStatus, err error) {
 	if err != nil {
 		t.Errorf("%s fail: %s returned error '%s', expected status '%s'",
 			getFunctionName(2),
@@ -208,15 +208,15 @@ func TestKeyNotVerified(t *testing.T) {
 
 	// CheckComment should fail if the API key isn't verified
 	_, err := api.CheckComment(&params)
-	assert_MethodFailsBeforeVerify(t, "API.CheckComment", err)
+	assertMethodFailsBeforeVerify(t, "API.CheckComment", err)
 
 	// SubmitSpam should fail if the API key isn't verified
 	err = api.SubmitSpam(&params)
-	assert_MethodFailsBeforeVerify(t, "API.SubmitSpam", err)
+	assertMethodFailsBeforeVerify(t, "API.SubmitSpam", err)
 
 	// SubmitHam should fail if the API key isn't verified
 	err = api.SubmitHam(&params)
-	assert_MethodFailsBeforeVerify(t, "API.SubmitHam", err)
+	assertMethodFailsBeforeVerify(t, "API.SubmitHam", err)
 }
 
 // Confirm key verification/storage
@@ -246,17 +246,17 @@ func TestDetectSpam(t *testing.T) {
 
 	// And test them
 	status, err := api.CheckComment(&params)
-	assert_SpamStatusEquals(t, "API.CheckComment", StatusProbableSpam, status, err)
+	assertSpamStatusEquals(t, "API.CheckComment", StatusProbableSpam, status, err)
 
 	// Add the discard flag to simulate blatant or "pervasive" spam
 	params.Set("test_discard", "true")
 
 	// And test again
 	status, err = api.CheckComment(&params)
-	assert_SpamStatusEquals(t, "API.CheckComment", StatusDefiniteSpam, status, err)
+	assertSpamStatusEquals(t, "API.CheckComment", StatusDefiniteSpam, status, err)
 
 	// Check that the test mode parameter is being cleaned up
-	assert_ParamsDoNotContainTestFlag(t, "API.CheckComment", &params)
+	assertParamsDoNotContainTestFlag(t, "API.CheckComment", &params)
 }
 
 // Confirm ham detection
@@ -275,10 +275,10 @@ func TestDetectHam(t *testing.T) {
 
 	// And test them
 	status, err := api.CheckComment(&params)
-	assert_SpamStatusEquals(t, "API.CheckComment", StatusNotSpam, status, err)
+	assertSpamStatusEquals(t, "API.CheckComment", StatusNotSpam, status, err)
 
 	// Check that the test mode parameter is being cleaned up
-	assert_ParamsDoNotContainTestFlag(t, "API.CheckComment", &params)
+	assertParamsDoNotContainTestFlag(t, "API.CheckComment", &params)
 }
 
 // According to the Akismet docs, blog and user_ip are required parameters
@@ -297,7 +297,7 @@ func TestRequiredFields(t *testing.T) {
 	params.Del(_UserIP)
 
 	_, err = api.CheckComment(&params)
-	assert_MethodFailsWithoutRequiredField(t, "API.CheckComment", err, _Site, _UserIP)
+	assertMethodFailsWithoutRequiredField(t, "API.CheckComment", err, _Site, _UserIP)
 
 	// Missing: blog
 	// Should throw an error
@@ -305,7 +305,7 @@ func TestRequiredFields(t *testing.T) {
 	params.Del(_Site)
 
 	_, err = api.CheckComment(&params)
-	assert_MethodFailsWithoutRequiredField(t, "API.CheckComment", err, _Site)
+	assertMethodFailsWithoutRequiredField(t, "API.CheckComment", err, _Site)
 
 	// Missing: ip
 	// Should throw an error
@@ -313,7 +313,7 @@ func TestRequiredFields(t *testing.T) {
 	params.Del(_UserIP)
 
 	_, err = api.CheckComment(&params)
-	assert_MethodFailsWithoutRequiredField(t, "API.CheckComment", err, _UserIP)
+	assertMethodFailsWithoutRequiredField(t, "API.CheckComment", err, _UserIP)
 
 	// Missing: user agent
 	// Should NOT throw an error
@@ -345,7 +345,7 @@ func TestSubmit(t *testing.T) {
 	}
 
 	// Check that the test mode parameter is being cleaned up
-	assert_ParamsDoNotContainTestFlag(t, "API.SubmitSpam", &params)
+	assertParamsDoNotContainTestFlag(t, "API.SubmitSpam", &params)
 }
 
 // Check spam/ham submission with an empty request body.

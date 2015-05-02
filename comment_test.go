@@ -13,7 +13,7 @@ var comment *Comment
 
 // Check that a Comment has been created successfully and that it has the
 // correct website, comment type, test mode and user agent settings.
-func assert_CommentObjectIsValid(
+func assertCommentObjectIsValid(
 	t *testing.T, method string, comment *Comment, err error, testMode bool, userAgent string) {
 
 	if err != nil {
@@ -60,7 +60,7 @@ func assert_CommentObjectIsValid(
 }
 
 // Check that a Comment has the string value we expect for the given parameter type.
-func assert_StringParameterEquals(t *testing.T, comment *Comment, key string, expected string) {
+func assertStringParameterEquals(t *testing.T, comment *Comment, key string, expected string) {
 	if v := comment.params.Get(key); v != expected {
 		t.Errorf("%s fail: Parameter '%s' is '%s', expected '%s'",
 			getFunctionName(2),
@@ -72,8 +72,8 @@ func assert_StringParameterEquals(t *testing.T, comment *Comment, key string, ex
 }
 
 // Check that a Comment has the date value we expect for the given parameter type.
-func assert_DateParameterEquals(t *testing.T, comment *Comment, key string, expected time.Time) {
-	assert_StringParameterEquals(t, comment, key, formatTime(expected))
+func assertDateParameterEquals(t *testing.T, comment *Comment, key string, expected time.Time) {
+	assertStringParameterEquals(t, comment, key, formatTime(expected))
 }
 
 // Confirm that the constructors create Comments with the expected settings.
@@ -83,16 +83,16 @@ func TestCommentCreate(t *testing.T) {
 
 	// Test all of the Comment constructors
 	comment, err = NewComment(config.APIKey, config.Site)
-	assert_CommentObjectIsValid(t, "Comment.NewComment", comment, err, false, "")
+	assertCommentObjectIsValid(t, "Comment.NewComment", comment, err, false, "")
 
 	comment, err = NewTestComment(config.APIKey, config.Site)
-	assert_CommentObjectIsValid(t, "Comment.NewTestComment", comment, err, true, "")
+	assertCommentObjectIsValid(t, "Comment.NewTestComment", comment, err, true, "")
 
 	comment, err = NewCommentUA(config.APIKey, config.Site, commentUserAgent)
-	assert_CommentObjectIsValid(t, "Comment.NewCommentUA", comment, err, false, commentUserAgent)
+	assertCommentObjectIsValid(t, "Comment.NewCommentUA", comment, err, false, commentUserAgent)
 
 	comment, err = NewTestCommentUA(config.APIKey, config.Site, commentUserAgent)
-	assert_CommentObjectIsValid(t, "Comment.NewTestCommentUA", comment, err, true, commentUserAgent)
+	assertCommentObjectIsValid(t, "Comment.NewTestCommentUA", comment, err, true, commentUserAgent)
 
 	// Add debugging
 	if config.Debug {
@@ -114,28 +114,28 @@ func TestCommentParameters(t *testing.T) {
 
 	s = config.IP
 	comment.SetUserIP(s)
-	assert_StringParameterEquals(t, comment, "user_ip", s)
+	assertStringParameterEquals(t, comment, "user_ip", s)
 
 	s = config.UserAgent
 	comment.SetUserAgent(s)
-	assert_StringParameterEquals(t, comment, "user_agent", s)
+	assertStringParameterEquals(t, comment, "user_agent", s)
 
 	s = "http://www.google.com"
 	comment.SetReferer(s)
-	assert_StringParameterEquals(t, comment, "referrer", s)
+	assertStringParameterEquals(t, comment, "referrer", s)
 
 	s = config.Article
 	comment.SetPage(s)
-	assert_StringParameterEquals(t, comment, "permalink", s)
+	assertStringParameterEquals(t, comment, "permalink", s)
 
 	// Set article timestamp to 1 month ago
 	ts = time.Now().AddDate(0, -1, 0)
 	comment.SetPageTimestamp(ts)
-	assert_DateParameterEquals(t, comment, "comment_post_modified_gmt", ts)
+	assertDateParameterEquals(t, comment, "comment_post_modified_gmt", ts)
 
 	s = "gokismet test"
 	comment.SetAuthor(s)
-	assert_StringParameterEquals(t, comment, "comment_author", s)
+	assertStringParameterEquals(t, comment, "comment_author", s)
 
 	// Specifiying the email address has side effects. It seems to make
 	// the following submit-ham call work, so when this test is run more
@@ -144,28 +144,28 @@ func TestCommentParameters(t *testing.T) {
 	// tests.
 	s = "check@example.com"
 	comment.SetEmail(s)
-	assert_StringParameterEquals(t, comment, "comment_author_email", s)
+	assertStringParameterEquals(t, comment, "comment_author_email", s)
 
 	s = "This is an example comment that does not contain anything spammy. In the absence of other dodgy settings Akismet should return a negative (non-spam) response..."
 	comment.SetContent(s)
-	assert_StringParameterEquals(t, comment, "comment_content", s)
+	assertStringParameterEquals(t, comment, "comment_content", s)
 
 	s = "http://www.example.com"
 	comment.SetURL(s)
-	assert_StringParameterEquals(t, comment, "comment_author_url", s)
+	assertStringParameterEquals(t, comment, "comment_author_url", s)
 
 	// Set comment timestamp to current time
 	ts = time.Now()
 	comment.SetTimestamp(ts)
-	assert_DateParameterEquals(t, comment, "comment_date_gmt", ts)
+	assertDateParameterEquals(t, comment, "comment_date_gmt", ts)
 
 	s = "en_us"
 	comment.SetSiteLanguage(s)
-	assert_StringParameterEquals(t, comment, "blog_lang", s)
+	assertStringParameterEquals(t, comment, "blog_lang", s)
 
 	s = "UTF-8"
 	comment.SetCharset(s)
-	assert_StringParameterEquals(t, comment, "blog_charset", s)
+	assertStringParameterEquals(t, comment, "blog_charset", s)
 }
 
 // Confirm that spam checks return the expected results.
@@ -177,21 +177,21 @@ func TestCommentCheck(t *testing.T) {
 
 	// Test the non-spammy comment set up in the previous function
 	status, err := comment.Check()
-	assert_SpamStatusEquals(t, "Comment.Check", StatusNotSpam, status, err)
+	assertSpamStatusEquals(t, "Comment.Check", StatusNotSpam, status, err)
 
 	// Make the comment spammy
 	comment.SetAuthor("viagra-test-123")
 
 	// And test again
 	status, err = comment.Check()
-	assert_SpamStatusEquals(t, "Comment.Check", StatusProbableSpam, status, err)
+	assertSpamStatusEquals(t, "Comment.Check", StatusProbableSpam, status, err)
 
 	// Make the comment non-spammy again
 	comment.SetAuthor("gokismet test")
 
 	// And test a final time
 	status, err = comment.Check()
-	assert_SpamStatusEquals(t, "Comment.Check", StatusNotSpam, status, err)
+	assertSpamStatusEquals(t, "Comment.Check", StatusNotSpam, status, err)
 }
 
 func TestCommentReport(t *testing.T) {
