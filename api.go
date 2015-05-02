@@ -145,9 +145,9 @@ type API struct {
 
 	// A Writer for logging HTTP requests and responses. If set to
 	// a non-nil value, all requests to and responses from Akismet
-	// are written to it. This is provided as a convenience for
-	// development and testing only. It should not be enabled in
-	// Production code.
+	// are written to it. Output is provided as a convenience for
+	// development and testing only. It should not be used in
+	// Production.
 	Output io.Writer
 
 	// The Akismet API key, set in VerifyKey and required for calls
@@ -162,7 +162,7 @@ type API struct {
 // key for subsequent API calls. Otherwise, a non-nil error is returned.
 // Must be called before CheckComment, SubmitSpam or SubmitHam.
 //
-// See http://akismet.com/development/api/#verify-key for more info.
+// See http://akismet.com/development/api/#verify-key for the Akismet docs.
 func (api *API) VerifyKey(key string, site string) error {
 
 	u := api.buildRequestURL("verify-key", false)
@@ -362,7 +362,7 @@ func (api *API) doRequest(req *http.Request) (*http.Response, error) {
 // It takes an Akismet endpoint URL and a set of query parameters.
 func (api *API) execute(u string, params *url.Values) (string, http.Header, error) {
 
-	// In test mode we need to add an extra parameter to our request
+	// In test mode we need to add an extra parameter to the request
 	// but we'll remove it on exit so there are no side effects
 	if api.TestMode && params.Get("is_test") == "" {
 		params.Set("is_test", "1")
@@ -393,8 +393,8 @@ func (api *API) execute(u string, params *url.Values) (string, http.Header, erro
 		return "", nil, err
 	}
 
-	// ... and then read the response body
-	// (also set the body to close on function exit)
+	// ... and then read the response body, scheduling it to
+	// close on function exit
 	defer resp.Body.Close()
 	body, err := ioutil.ReadAll(resp.Body)
 	if err != nil {
@@ -404,8 +404,9 @@ func (api *API) execute(u string, params *url.Values) (string, http.Header, erro
 	return string(body), resp.Header, nil
 }
 
-// log writes the provided Request or Response to the designated output
-// Writer, if supplied. It should have no side effects on the Request/Response.
+// log writes the provided Request or Response to the designated
+// output Writer, if supplied. The implementation of this function
+// should not have any side effects on the Request/Response.
 func (api *API) log(r interface{}) error {
 	if api.Output != nil {
 		return writeAndRestore(api.Output, r)

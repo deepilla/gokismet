@@ -63,8 +63,8 @@ func NewTestCommentUA(key string, site string, userAgent string) (*Comment, erro
 	return new(key, site, true, userAgent)
 }
 
-// new does the heavy lifting for the various versions of the Comment
-// constructor. It initialises a new Comment, sets its user agent, and
+// new handles the heavy lifting for the various versions of the Comment
+// constructor. It initialises a new Comment, sets the user agent, and
 // verifies the provided Akismet API key. If the key is verified, new
 // returns the new Comment, otherwise it returns nil and a non-nil error.
 func new(key string, site string, testMode bool, userAgent string) (*Comment, error) {
@@ -146,15 +146,16 @@ func (c *Comment) SetType(s string) {
 	c.set(_Type, s)
 }
 
-// SetUserIP specifies the IP address of the commenter.
-// This is required for calls to Check, ReportSpam and ReportNotSpam.
+// SetUserIP specifies the IP address of the commenter. This is required
+// for calls to Check, amd highly recommended for calls to ReportSpam
+// and ReportNotSpam.
 func (c *Comment) SetUserIP(s string) {
 	c.set(_UserIP, s)
 }
 
 // SetUserAgent specifies the user agent of the commenter's browser.
-// This is not technically required but still highly recommended for
-// calls to Check, ReportSpam and ReportNotSpam.
+// This is highly recommended for calls to Check, ReportSpam and
+// ReportNotSpam.
 func (c *Comment) SetUserAgent(s string) {
 	c.set(_UserAgent, s)
 }
