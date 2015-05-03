@@ -11,7 +11,7 @@ Gokismet is a Go implementation of the [Akismet](https://akismet.com/) anti-spam
 
 ## Documentation
 
-Find documentation for the gokismet package on [GoDoc](https://godoc.org/github.com/deepilla/gokismet). The Akismet API docs are [here](http://akismet.com/development/api/#detailed-docs).
+Documentation for the gokismet package is [available on GoDoc](https://godoc.org/github.com/deepilla/gokismet). See the [Akismet API docs](http://akismet.com/development/api/#detailed-docs) for background.
 
 ## Installation
 
