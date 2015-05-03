@@ -2,3 +2,6 @@
 testconfig.json
 # Binary created by "go test -c"
 gokismet.test
+# Test coverage files
+# (assuming standard naming convention from http://blog.golang.org/cover)
+*.out
