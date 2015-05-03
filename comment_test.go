@@ -1,6 +1,7 @@
 package gokismet
 
 import (
+	"io"
 	"os"
 	"strconv"
 	"testing"
@@ -21,18 +22,27 @@ func assertCommentObjectIsValid(
 		t.Fatalf("%s fail: %s returned '%s'", getFunctionName(2), method, err)
 		return
 	}
+	// Check that we have the expected number of parameters
+	if n, e := len(comment.params), 2; n != e {
+		t.Errorf("%s fail: %s created a Comment with %d params, expected %d",
+			getFunctionName(2),
+			method,
+			n,
+			e,
+		)
+	}
 	// Check that the site is correctly set
-	if v := comment.params.Get("blog"); v != config.Site {
-		t.Errorf("%s fail: %s returned a Comment with Site '%s', expected '%s'",
+	if v, e := comment.params.Get("blog"), config.Site; v != e {
+		t.Errorf("%s fail: %s created a Comment with Site '%s', expected '%s'",
 			getFunctionName(2),
 			method,
 			v,
-			config.Site,
+			e,
 		)
 	}
 	// Check that comment type is correctly set
 	if v, e := comment.params.Get("comment_type"), "comment"; v != e {
-		t.Errorf("%s fail: %s returned a Comment with comment type '%s', expected '%s'",
+		t.Errorf("%s fail: %s created a Comment with comment type '%s', expected '%s'",
 			getFunctionName(2),
 			method,
 			v,
@@ -40,21 +50,21 @@ func assertCommentObjectIsValid(
 		)
 	}
 	// Check that TestMode is correctly set
-	if v := comment.api.TestMode; v != testMode {
-		t.Errorf("%s fail: %s returned a Comment with TestMode '%s', expected '%s'",
+	if v, e := comment.api.TestMode, testMode; v != e {
+		t.Errorf("%s fail: %s created a Comment with TestMode '%s', expected '%s'",
 			getFunctionName(2),
 			method,
 			strconv.FormatBool(v),
-			strconv.FormatBool(testMode),
+			strconv.FormatBool(e),
 		)
 	}
 	// Check that UserAgent is correctly set
-	if v := comment.api.UserAgent; v != userAgent {
-		t.Errorf("%s fail: %s returned a Comment with UserAgent '%s', expected '%s'",
+	if v, e := comment.api.UserAgent, userAgent; v != e {
+		t.Errorf("%s fail: %s created a Comment with UserAgent '%s', expected '%s'",
 			getFunctionName(2),
 			method,
 			v,
-			userAgent,
+			e,
 		)
 	}
 }
@@ -76,10 +86,27 @@ func assertDateParameterEquals(t *testing.T, comment *Comment, key string, expec
 	assertStringParameterEquals(t, comment, key, formatTime(expected))
 }
 
+// Check that a Comment is sending output to the Writer we expect
+func assertCommentLogsTo(t *testing.T, comment *Comment, expected io.Writer) {
+	if w := comment.api.Output; w != expected {
+		t.Errorf("%s fail: Comment is logging to %T %v, epected %T %v",
+			getFunctionName(2),
+			w,
+			w,
+			expected,
+			expected,
+		)
+	}
+}
+
 // Confirm that the constructors create Comments with the expected settings.
 // Note: The last version will be the Comment that gets used in subsequent tests.
 func TestCommentCreate(t *testing.T) {
 	var err error
+
+	// Make sure creation fails with a dodgy API key
+	comment, err = NewTestComment(badKey, config.Site)
+	assertBadKeyIsNotVerified(t, "Comment.NewTestComment", badKey, err, comment)
 
 	// Test all of the Comment constructors
 	comment, err = NewComment(config.APIKey, config.Site)
@@ -95,9 +122,13 @@ func TestCommentCreate(t *testing.T) {
 	assertCommentObjectIsValid(t, "Comment.NewTestCommentUA", comment, err, true, commentUserAgent)
 
 	// Add debugging
+	var output io.Writer // zero-value is nil
 	if config.Debug {
-		comment.LogTo(os.Stdout)
+		output = os.Stdout
 	}
+	assertCommentLogsTo(t, comment, nil)
+	comment.LogTo(output)
+	assertCommentLogsTo(t, comment, output)
 }
 
 // Confirm that the Set... functions work as expected.
@@ -166,6 +197,16 @@ func TestCommentParameters(t *testing.T) {
 	s = "UTF-8"
 	comment.SetCharset(s)
 	assertStringParameterEquals(t, comment, "blog_charset", s)
+
+	// Switch comment type to test SetType
+	s = "forum-post"
+	comment.SetType(s)
+	assertStringParameterEquals(t, comment, "comment_type", s)
+
+	// But remember to switch it back again before continuing
+	s = "comment"
+	comment.SetType(s)
+	assertStringParameterEquals(t, comment, "comment_type", s)
 }
 
 // Confirm that spam checks return the expected results.
@@ -211,4 +252,33 @@ func TestCommentReport(t *testing.T) {
 	if err := comment.ReportNotSpam(); err != nil {
 		t.Errorf("%s fail: Comment.ReportNotSpam returned '%s'", getFunctionName(1), err)
 	}
+}
+
+func TestCommentReset(t *testing.T) {
+	if comment == nil {
+		// We can't continue without a Comment object
+		t.Fatalf("%s fail: The global Comment object has not been initialised.", getFunctionName(1))
+	}
+
+	// Reset should give us a Comment that looks like it was just created by
+	// a constructor (in this case NewTestCommentUA)
+	comment.Reset()
+	assertCommentObjectIsValid(t, "Comment.Reset", comment, nil, true, commentUserAgent)
+
+	// Reload the Comment
+	TestCommentParameters(t)
+
+	// Change the comment type and reset again
+	// This time when we rest the comment type should be equal to
+	// whatever we set it to be here
+	s := "pingback"
+	comment.SetType(s)
+	assertStringParameterEquals(t, comment, "comment_type", s)
+	comment.Reset()
+	assertStringParameterEquals(t, comment, "comment_type", s)
+
+	// Resetting the comment type to the default should give us a fresh
+	// Comment again
+	comment.SetType("comment")
+	assertCommentObjectIsValid(t, "Comment.Reset", comment, nil, true, commentUserAgent)
 }

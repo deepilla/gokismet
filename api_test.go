@@ -2,12 +2,16 @@ package gokismet
 
 import (
 	"encoding/json"
+	"io/ioutil"
 	"net/url"
 	"os"
 	"runtime"
 	"strings"
 	"testing"
 )
+
+// Dummy API key that is guaranteed to fail verification
+const badKey = "------------"
 
 // Error codes for the initConfig function
 const (
@@ -61,6 +65,16 @@ func initAPI() {
 	api.UserAgent = "Gokismet.API"
 	if config.Debug {
 		api.Output = os.Stdout
+	} else {
+		// Discard is an io.Writer on which all Write calls succeed without
+		// doing anything. The advantage of using Discard over not setting
+		// a Writer at all is that the logging code branch is still covered
+		// in the tests, even if we're not debugging.
+		//
+		// We don't do this for the global Comment object though. So with
+		// logging turned off we're testing the logging and non-logging
+		// code branches.
+		api.Output = ioutil.Discard
 	}
 }
 
@@ -138,6 +152,41 @@ func assertParamsDoNotContainTestFlag(t *testing.T, method string, params *url.V
 	}
 }
 
+// Akismet should fail to verify a bad API key. We should get a "failed to
+// verify" APIError. If a Comment is supplied it should be nil.
+func assertBadKeyIsNotVerified(t *testing.T, method string, key string, err error, comment *Comment) {
+	if comment != nil {
+		t.Errorf("%s fail: %s returned a Comment when given a bad key '%s'",
+			getFunctionName(2),
+			method,
+			key,
+		)
+	}
+	if err == nil {
+		t.Errorf("%s fail: %s succeeded with a bad key '%s'",
+			getFunctionName(2),
+			method,
+			key,
+		)
+	}
+	if _, ok := err.(APIError); !ok {
+		t.Errorf("%s fail: %s returned error '%s', expected an APIError",
+			getFunctionName(2),
+			method,
+			err,
+		)
+	}
+	s := "Akismet didn't verify key " + key
+	if err.(APIError).Reason != s {
+		t.Errorf("%s fail: %s returned error '%s', expected '%s'",
+			getFunctionName(2),
+			method,
+			err,
+			s,
+		)
+	}
+}
+
 // The main API methods will not work unless an Akismet API key has been
 // verified. Check that those methods fail before verification. We should
 // get an errKeyNotVerified error.
@@ -192,6 +241,14 @@ func assertSpamStatusEquals(t *testing.T, method string, expected, status SpamSt
 		)
 		return
 	}
+	// Also check that the status maps to a valid string
+	if status.String() == status.invalid() {
+		t.Errorf("%s fail: %s returned non-stringifiable status '%s'",
+			getFunctionName(2),
+			method,
+			status,
+		)
+	}
 	if status != expected {
 		t.Errorf("%s fail: %s returned status '%s', expected '%s'",
 			getFunctionName(2),
@@ -207,8 +264,9 @@ func TestKeyNotVerified(t *testing.T) {
 	params := defaultParams()
 
 	// CheckComment should fail if the API key isn't verified
-	_, err := api.CheckComment(&params)
+	status, err := api.CheckComment(&params)
 	assertMethodFailsBeforeVerify(t, "API.CheckComment", err)
+	assertSpamStatusEquals(t, "API.CheckComment", StatusUnknown, status, nil)
 
 	// SubmitSpam should fail if the API key isn't verified
 	err = api.SubmitSpam(&params)
@@ -221,9 +279,13 @@ func TestKeyNotVerified(t *testing.T) {
 
 // Confirm key verification/storage
 func TestVerifyKey(t *testing.T) {
-	err := api.VerifyKey(config.APIKey, config.Site)
+	// First test that a bad key does not verify
+	err := api.VerifyKey(badKey, config.Site)
+	assertBadKeyIsNotVerified(t, "API.VerifyKey", badKey, err, nil)
+	// Then supply the proper key
+	err = api.VerifyKey(config.APIKey, config.Site)
 	if err != nil {
-		t.Errorf("%s fail: verify '%s' returned '%s'", getFunctionName(1), config.APIKey, err)
+		t.Fatalf("%s fail: verify '%s' returned '%s'", getFunctionName(1), config.APIKey, err)
 	}
 	if api.key != config.APIKey {
 		t.Errorf("%s fail: api key '%s' has not been stored", getFunctionName(1), config.APIKey)
@@ -288,6 +350,7 @@ func TestDetectHam(t *testing.T) {
 func TestRequiredFields(t *testing.T) {
 
 	var err error
+	var status SpamStatus
 	var params url.Values
 
 	// Missing: blog, ip
@@ -296,31 +359,34 @@ func TestRequiredFields(t *testing.T) {
 	params.Del(_Site)
 	params.Del(_UserIP)
 
-	_, err = api.CheckComment(&params)
+	status, err = api.CheckComment(&params)
 	assertMethodFailsWithoutRequiredField(t, "API.CheckComment", err, _Site, _UserIP)
+	assertSpamStatusEquals(t, "API.CheckComment", StatusUnknown, status, nil)
 
 	// Missing: blog
 	// Should throw an error
 	params = defaultParams()
 	params.Del(_Site)
 
-	_, err = api.CheckComment(&params)
+	status, err = api.CheckComment(&params)
 	assertMethodFailsWithoutRequiredField(t, "API.CheckComment", err, _Site)
+	assertSpamStatusEquals(t, "API.CheckComment", StatusUnknown, status, nil)
 
 	// Missing: ip
 	// Should throw an error
 	params = defaultParams()
 	params.Del(_UserIP)
 
-	_, err = api.CheckComment(&params)
+	status, err = api.CheckComment(&params)
 	assertMethodFailsWithoutRequiredField(t, "API.CheckComment", err, _UserIP)
+	assertSpamStatusEquals(t, "API.CheckComment", StatusUnknown, status, nil)
 
 	// Missing: user agent
 	// Should NOT throw an error
 	params = defaultParams()
 	params.Del(_UserAgent)
 
-	_, err = api.CheckComment(&params)
+	status, err = api.CheckComment(&params)
 	if err != nil {
 		t.Errorf("%s fail: API.CheckComment failed with missing field: %s, returned '%s'",
 			getFunctionName(1),

@@ -75,7 +75,11 @@ func (s SpamStatus) String() string {
 	case StatusDefiniteSpam:
 		return "Definite Spam"
 	}
-	return "Invalid Status"
+	return s.invalid()
+}
+
+func (s SpamStatus) invalid() string {
+	return "Invalid Status!"
 }
 
 var errKeyNotVerified = errors.New("API key has not been verified")
