@@ -442,11 +442,6 @@ func writeAndRestore(w io.Writer, r interface{}) error {
 		return nil
 	}
 
-	// Get the type name and apply some basic formatting so that
-	// e.g. "*http.Response" becomes "Response"
-	s := strings.Split(reflect.TypeOf(r).String(), ".")
-	typ := s[len(s)-1]
-
 	// Use our one and only read to save the body into a buffer.
 	// We'll use this buffer to restore the body after any
 	// destructive read or write operations
@@ -457,6 +452,11 @@ func writeAndRestore(w io.Writer, r interface{}) error {
 
 	// Restore the body after the call to ReadAll
 	restoreBody(body, buf)
+
+	// Get the type name and apply some basic formatting so that
+	// e.g. "*http.Response" becomes "Response"
+	s := strings.Split(reflect.TypeOf(r).String(), ".")
+	typ := s[len(s)-1]
 
 	// Output a header line before the call to Write
 	_, err = io.WriteString(w, "\n\n["+strings.ToUpper(typ)+"]\n")

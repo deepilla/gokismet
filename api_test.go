@@ -153,8 +153,11 @@ func assertParamsDoNotContainTestFlag(t *testing.T, method string, params *url.V
 }
 
 // Akismet should fail to verify a bad API key. We should get a "failed to
-// verify" APIError. If a Comment is supplied it should be nil.
+// verify" APIError. If a Comment is supplied, it should be the return value
+// from one of the Comment constructors - we expect it to be nil.
 func assertBadKeyIsNotVerified(t *testing.T, method string, key string, err error, comment *Comment) {
+	// Comment constructors verify the provided key. If key verification
+	// fails they should return nil instead of an actual Comment object.
 	if comment != nil {
 		t.Errorf("%s fail: %s returned a Comment when given a bad key '%s'",
 			getFunctionName(2),
@@ -162,6 +165,8 @@ func assertBadKeyIsNotVerified(t *testing.T, method string, key string, err erro
 			key,
 		)
 	}
+	// A key failing to verify is an error. The error returned from the
+	// verification function should not be nil.
 	if err == nil {
 		t.Errorf("%s fail: %s succeeded with a bad key '%s'",
 			getFunctionName(2),
@@ -169,13 +174,20 @@ func assertBadKeyIsNotVerified(t *testing.T, method string, key string, err erro
 			key,
 		)
 	}
+	// When Akismet functions correctly but returns a result we don't
+	// like, that result should be encapsulated in an APIError.
 	if _, ok := err.(APIError); !ok {
 		t.Errorf("%s fail: %s returned error '%s', expected an APIError",
 			getFunctionName(2),
 			method,
 			err,
 		)
+		// The remainder of the function assumes an APIError. If we didn't
+		// get one we can bail here.
+		return
 	}
+	// Check that the error message we get back is what we'd expect for
+	// a dodgy API key.
 	s := "Akismet didn't verify key " + key
 	if err.(APIError).Reason != s {
 		t.Errorf("%s fail: %s returned error '%s', expected '%s'",
