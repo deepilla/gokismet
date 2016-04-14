@@ -19,8 +19,8 @@ type ClientWriter struct {
 	writer io.Writer
 }
 
-// Do writes the incoming request, then calls the Do method
-// of the wrapped Client and writes the response.
+// Do logs the incoming request, then calls the Do method of
+// the wrapped Client and logs the response.
 func (cw ClientWriter) Do(req *http.Request) (*http.Response, error) {
 
 	cw.writeRequest(req)
@@ -46,14 +46,14 @@ func ExampleNewAPIWithClient() {
 		os.Stdout,
 	}
 
-	// Initialise an API that uses our ClientWriter.
+	// Initialise an API that uses the ClientWriter.
 	api := gokismet.NewAPIWithClient("YOUR_API_KEY", "http://your.website.com", client)
 
 	comment := gokismet.Comment{
 	// Comment data goes here...
 	}
 
-	// API calls now write HTTP requests and responses to stdout.
+	// API calls now log HTTP requests/responses to stdout.
 	status, err := api.CheckComment(comment.Values())
 
 	fmt.Println(status, err)

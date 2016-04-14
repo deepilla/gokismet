@@ -93,13 +93,15 @@ type SpamStatus uint
 // See http://blog.akismet.com/2014/04/23/theres-a-ninja-in-your-akismet/
 // for more on pervasive spam.
 const (
-	// An error occurred during the API call.
+	// StatusUknown indicates an error.
 	StatusUnknown SpamStatus = iota
-	// Akismet did not detect spam.
+	// StatusHam means that Akismet did not detect spam.
 	StatusHam
-	// Akismet detected normal spam.
+	// StatusProbableSpam means that Akismet detected
+	// normal spam.
 	StatusProbableSpam
-	// Akismet detected "pervasive" spam.
+	// StatusDefiniteSpam means that Akismet detected
+	// "pervasive" spam.
 	StatusDefiniteSpam
 )
 
@@ -113,15 +115,15 @@ type API struct {
 }
 
 // NewAPI returns an API that uses the standard library's default
-// HTTP client. The API key and website provided here will be
-// verified by Akismet on the first call to CheckComment, SubmitHam,
-// or SubmitSpam.
+// HTTP client. The API key and website provided here are sent to
+// Akismet for verification on the first call to CheckComment,
+// SubmitHam, or SubmitSpam.
 func NewAPI(key string, site string) *API {
 	return NewAPIWithClient(key, site, http.DefaultClient)
 }
 
 // NewAPIWithClient is the same as NewAPI but the caller provides
-// its own Client. This is useful for manipulating HTTP requests.
+// its own Client. This can be useful for manipulating HTTP requests.
 func NewAPIWithClient(key string, site string, client Client) *API {
 	return &API{
 		key:    key,
@@ -146,8 +148,8 @@ func (api *API) SubmitSpam(values map[string]string) error {
 	return api.submit(APISubmitSpam, values)
 }
 
-// CheckComment takes comment data in the form of key-value
-// pairs and checks it for spam.
+// CheckComment takes comment data in the form of key-value pairs
+// and checks it for spam.
 func (api *API) CheckComment(values map[string]string) (SpamStatus, error) {
 
 	if err := api.verify(); err != nil {
@@ -317,8 +319,8 @@ func (api *API) execute(call APICall, values map[string]string) (string, http.He
 	return string(body), resp.Header, nil
 }
 
-// An APIError represents an error or unexpected value returned
-// by Akismet in response to an API call.
+// An APIError represents an error or unexpected response
+// from Akismet in response to an API call.
 type APIError struct {
 	// Type of API call.
 	Call APICall
@@ -379,8 +381,6 @@ type AuthError struct {
 	Help string
 }
 
-// newAuthError creates a nenw AuthError object with the
-// provided error information.
 func newAuthError(key string, site string, result string, header http.Header) *AuthError {
 	return &AuthError{
 		Key:    key,
@@ -390,7 +390,6 @@ func newAuthError(key string, site string, result string, header http.Header) *A
 	}
 }
 
-// Error satisfies the error interface.
 func (e AuthError) Error() string {
 
 	s := "Akismet failed to verify key \"" + e.Key + "\" for site \"" + e.Site + "\""
@@ -404,15 +403,15 @@ func (e AuthError) Error() string {
 
 // A Client executes an HTTP request and returns an HTTP
 // response. Its interface is satisfied by http.Client.
-// Provide your own implementation to inspect or modify
-// the HTTP requests/responses.
+// Provide your own implementation to manipulate HTTP
+// requests and/or responses.
 type Client interface {
 	Do(req *http.Request) (*http.Response, error)
 }
 
 // clientWithHeaders decorates an existing Client with
 // additional request headers. It also satisfies the Client
-// interface so it can be used in place of the original.
+// interface.
 type clientWithHeaders struct {
 	client  Client
 	headers map[string]string
@@ -420,7 +419,7 @@ type clientWithHeaders struct {
 
 // WrapClient takes a Client and a map of key-value pairs and
 // returns a new Client that injects those values into all
-// incoming request headers.
+// HTTP request headers.
 func WrapClient(client Client, headers map[string]string) Client {
 	return &clientWithHeaders{
 		client:  client,
@@ -441,10 +440,10 @@ func (c *clientWithHeaders) Do(req *http.Request) (*http.Response, error) {
 }
 
 // A Comment represents a blog comment, forum post, or other
-// item of (potentially spammy) user-generated content. Aim
-// to set as many of these fields as possible. The more
-// information Akismet has to work with, the more accurate
-// its spam detection.
+// item of (potentially spammy) user-generated content. When
+// creating instances of this type, aim to set as many fields
+// as possible. The more information Akismet has to work with,
+// the more accurate its spam detection.
 type Comment struct {
 
 	// Homepage URL of the website being commented on.
@@ -497,7 +496,7 @@ type Comment struct {
 }
 
 // Values returns comment data as a map of key-value pairs
-// suitable for passing to the API methods CheckComment,
+// which can then be passed to the API methods CheckComment,
 // SubmitHam and SubmitSpam.
 func (c *Comment) Values() map[string]string {
 
@@ -535,7 +534,7 @@ func formatTime(t time.Time) string {
 	if t.IsZero() {
 		return ""
 	}
-	// Akismet expects UTC time in ISO 8601 format
+	// Akismet requires UTC time in ISO 8601 format
 	// e.g. "2016-04-18T09:30:59Z".
 	return t.Format(time.RFC3339)
 }

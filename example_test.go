@@ -13,7 +13,7 @@ func ExampleAPI_CheckComment() {
 	comment := gokismet.Comment{
 		UserIP:        "127.0.0.1",
 		UserAgent:     "Mozilla/5.0 (Windows; U; Windows NT 6.1; en-US; rv:1.9.2) Gecko/20100115 Firefox/3.6",
-		Page:          "http://www.your.website.com/2016/05/05/its-cinco-de-mayo/",
+		Page:          "http://your.website.com/2016/05/05/its-cinco-de-mayo/",
 		PageTimestamp: time.Date(2016, time.May, 5, 10, 30, 0, 0, time.UTC),
 		Author:        "A. Commenter",
 		AuthorEmail:   "acommenter@aol.com",

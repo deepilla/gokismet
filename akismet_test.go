@@ -4,7 +4,7 @@
 // provided on the command line.
 //
 // In order to ensure repeatable tests, the comment data is
-// supplemented with additional parameters that elicit specific
+// supplemented with optional parameters that elicit specific
 // responses from Akismet.
 package gokismet_test
 
