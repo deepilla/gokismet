@@ -2,94 +2,54 @@ package gokismet_test
 
 import (
 	"fmt"
-	"net/url"
+	"net/http"
+	"time"
 
 	"github.com/deepilla/gokismet"
 )
 
-func ExampleAPI() {
-
-	// Example: Using API to check a comment for spam
-
-	// Create a new API
-	api := &gokismet.API{}
-
-	// Verify your API key with Akismet
-	err := api.VerifyKey("YOUR_API_KEY", "http://yourwebsite.com")
-	if err != nil {
-		// Handle the error
-		fmt.Println(err)
-		return
+func ExampleAPI_CheckComment() {
+	// Define the comment data.
+	comment := gokismet.Comment{
+		UserIP:        "127.0.0.1",
+		UserAgent:     "Mozilla/5.0 (Windows; U; Windows NT 6.1; en-US; rv:1.9.2) Gecko/20100115 Firefox/3.6",
+		Page:          "http://www.your.website.com/2016/05/05/its-cinco-de-mayo/",
+		PageTimestamp: time.Date(2016, time.May, 5, 10, 30, 0, 0, time.UTC),
+		Author:        "A. Commenter",
+		AuthorEmail:   "acommenter@aol.com",
+		Content:       "I love Cinco de Mayo!",
+		// etc...
 	}
 
-	// Set up your query parameters
-	params := url.Values{
-		"blog":                 {"http://yourwebsite.com"},
-		"user_ip":              {"127.0.0.1"},
-		"user_agent":           {"Mozilla/5.0 (Windows; U; Windows NT 6.1; en-US; rv:1.9.2) Gecko/20100115 Firefox/3.6"},
-		"permalink":            {"http://www.yourwebsite.com/2015/05/05/its-cinco-de-mayo/"},
-		"comment_type":         {"comment"},
-		"comment_author":       {"A. Commenter"},
-		"comment_author_email": {"acommenter@aol.com"},
-		"comment_author_url":   {"http://www.lovecincodemayo.com"},
-		"comment_content":      {"I love Cinco de Mayo!"},
-	}
+	// Create an API instance.
+	api := gokismet.NewAPI("YOUR_API_KEY", "http://your.website.com")
 
-	// Call CheckComment
-	status, err := api.CheckComment(&params)
-	if err != nil {
-		// Handle the error
-		fmt.Println(err)
-		return
-	}
+	// Call CheckComment.
+	status, err := api.CheckComment(comment.Values())
 
-	// Do something based on the returned status
-	switch status {
-	case gokismet.StatusNotSpam:
-		fmt.Println("Akismet thinks this is a legit comment")
-	case gokismet.StatusProbableSpam:
-		fmt.Println("Akismet thinks this is spam")
-	case gokismet.StatusDefiniteSpam:
-		fmt.Println("Akismet thinks this is the worst kind of spam")
-	}
+	fmt.Println(status, err)
 }
 
-func ExampleComment() {
+func ExampleWrapClient() {
+	// EXAMPLE: Overwriting gokismet's default user agent.
 
-	// Example: Using Comment to check a comment for spam
-
-	// Create a new Comment
-	comment, err := gokismet.NewComment("YOUR_API_KEY", "http://www.yourwebsite.com")
-	if err != nil {
-		// Handle the error
-		fmt.Println(err)
-		return
+	// Define some custom request headers.
+	headers := map[string]string{
+		"User-Agent": "MyApplication/1.0 | " + gokismet.UA,
 	}
 
-	// Set your comment data
-	comment.SetUserIP("127.0.0.1")
-	comment.SetUserAgent("Mozilla/5.0 (Windows; U; Windows NT 6.1; en-US; rv:1.9.2) Gecko/20100115 Firefox/3.6")
-	comment.SetPage("http://www.yourwebsite.com/2015/05/05/its-cinco-de-mayo/")
-	comment.SetAuthor("A. Commenter")
-	comment.SetEmail("acommenter@aol.com")
-	comment.SetURL("http://www.lovecincodemayo.com")
-	comment.SetContent("I love Cinco de Mayo!")
+	// Wrap the default HTTP client with our headers.
+	client := gokismet.WrapClient(http.DefaultClient, headers)
 
-	// Call Check
-	status, err := comment.Check()
-	if err != nil {
-		// Handle the error
-		fmt.Println(err)
-		return
+	// Initialise an API that uses our client.
+	api := gokismet.NewAPIWithClient("YOUR_API_KEY", "http://your.website.com", client)
+
+	comment := gokismet.Comment{
+	// Comment data goes here...
 	}
 
-	// Do something based on the returned status
-	switch status {
-	case gokismet.StatusNotSpam:
-		fmt.Println("Akismet thinks this is a legit comment")
-	case gokismet.StatusProbableSpam:
-		fmt.Println("Akismet thinks this is spam")
-	case gokismet.StatusDefiniteSpam:
-		fmt.Println("Akismet thinks this is the worst kind of spam")
-	}
+	// API calls now have User Agent "MyApplication/1.0 | Gokismet/2.0".
+	status, err := api.CheckComment(comment.Values())
+
+	fmt.Println(status, err)
 }

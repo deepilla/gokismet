@@ -1,22 +1,70 @@
 /*
-Package gokismet is a Go implementation of the Akismet anti-spam API. It allows
-you to check comments, forum posts, and other user-generated content for spam
-and report missed spam or incorrectly flagged spam to Akismet.
+Package gokismet is a Go library for the Akismet anti-spam service.
 
-Gokismet provides two classes:
+Use gokismet to:
 
-1. API is a wrapper around Akismet's REST API. Typically you won't use
-this directly.
+1. Check comments, forum posts, and other user-generated content for spam.
 
-2. Comment is a convenience class built on top of API. It provides helper
-functions that hide the implementation details of the Akismet API.
+2. Notify Akismet of false positives (legitimate comments incorrectly flagged
+as spam) and false negatives (spam incorrectly flagged as legitimate comments).
 
-Note
+Checking for spam
 
-An Akismet API key is required to use this library.
+To check a comment for spam, call NewAPI to create an instance of the API type.
+Then call its CheckComment method, passing in the comment data as a map of
+key-value pairs.
 
-Background
+    api := gokismet.NewAPI("YOUR_API_KEY", "http://your.website.com")
 
-See http://akismet.com/development/api/#detailed-docs for the Akismet API docs.
+    values := map[string]string{
+        // Comment data goes here...
+    }
+
+    status, err := api.CheckComment(values)
+
+Gokismet provides a Comment type to generate the key-value pairs. Define a
+Comment with the desired fields, then call its Values method to extract the
+key-value pairs.
+
+    comment := gokismet.Comment{
+        UserIP:        "127.0.0.1",
+        UserAgent:     "Mozilla/5.0 (Windows; U; Windows NT 6.1; en-US; rv:1.9.2) Gecko/20100115 Firefox/3.6",
+        Page:          "http://www.your.website.com/2016/05/05/its-cinco-de-mayo/",
+        PageTimestamp: time.Date(2016, time.May, 5, 10, 30, 0, 0, time.UTC),
+        Author:        "A. Commenter",
+        AuthorEmail:   "acommenter@aol.com",
+        Content:       "I love Cinco de Mayo!",
+        // etc...
+    }
+
+    status, err := api.CheckComment(comment.Values())
+
+Reporting errors
+
+If CheckComment flags a legitimate comment as spam (or vice versa), report
+the error to Akismet using the API method SubmitHam (or SubmitSpam). The steps
+are the same as for a spam check.
+
+    api := gokismet.NewAPI("YOUR_API_KEY", "http://your.website.com")
+
+    comment := gokismet.Comment{
+        // Set comment fields here...
+    }
+
+    err := api.SubmitHam(comment.Values())
+
+Akismet help
+
+Gokismet is usable without any special knowledge of Akismet but the following
+references provide some useful background.
+
+1. Akismet API docs.
+https://akismet.com/development/api/#detailed-docs
+
+2. The two types of spam in Akismet.
+https://blog.akismet.com/2014/04/23/theres-a-ninja-in-your-akismet/
+
+3. Types of comment in Akismet.
+https://blog.akismet.com/2012/06/19/pro-tip-tell-us-your-comment_type/
 */
 package gokismet
