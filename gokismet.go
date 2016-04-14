@@ -71,7 +71,7 @@ const (
 )
 
 // An APICall represents a method of the Akismet REST API.
-type APICall int
+type APICall uint
 
 const (
 	APIVerifyKey APICall = iota
