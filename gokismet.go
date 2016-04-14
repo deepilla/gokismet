@@ -536,5 +536,5 @@ func formatTime(t time.Time) string {
 	}
 	// Akismet requires UTC time in ISO 8601 format
 	// e.g. "2016-04-18T09:30:59Z".
-	return t.Format(time.RFC3339)
+	return t.UTC().Format(time.RFC3339)
 }
