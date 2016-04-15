@@ -34,7 +34,7 @@ const (
 )
 
 // Elements of an Akismet API Request.
-// TODO: The API version is likely to change. We should
+// TODO: The API version is likely to change. Ideally we'd
 // be able to update it without changing any code.
 const (
 	reqMethod       = "POST"
@@ -93,15 +93,9 @@ type SpamStatus uint
 // See http://blog.akismet.com/2014/04/23/theres-a-ninja-in-your-akismet/
 // for more on pervasive spam.
 const (
-	// StatusUknown indicates an error.
-	StatusUnknown SpamStatus = iota
-	// StatusHam means that Akismet did not detect spam.
+	StatusUnknown SpamStatus = iota // indicates an error
 	StatusHam
-	// StatusProbableSpam means that Akismet detected
-	// normal spam.
 	StatusProbableSpam
-	// StatusDefiniteSpam means that Akismet detected
-	// "pervasive" spam.
 	StatusDefiniteSpam
 )
 
@@ -123,7 +117,8 @@ func NewAPI(key string, site string) *API {
 }
 
 // NewAPIWithClient is the same as NewAPI but the caller provides
-// its own Client. This can be useful for manipulating HTTP requests.
+// its own Client. Custom clients can be used to intercept HTTP
+// requests and responses (e.g. to add logging or other middleware).
 func NewAPIWithClient(key string, site string, client Client) *API {
 	return &API{
 		key:    key,
@@ -194,7 +189,7 @@ func (api *API) submit(call APICall, values map[string]string) error {
 }
 
 // verify authorises an API key and website with Akismet.
-// All API methods call verify first.
+// All of the public API methods call verify first.
 func (api *API) verify() error {
 
 	if api.verified {
@@ -278,8 +273,8 @@ func (api *API) encode(values map[string]string) string {
 	return uvals.Encode()
 }
 
-// request takes an endpoint URL and a map of query parameters
-// and returns an HTTP Request.
+// request creates an HTTP Request from the provided endpoint
+// URL and map of query parameters.
 func (api *API) request(curl string, values map[string]string) (*http.Request, error) {
 
 	req, err := http.NewRequest(reqMethod, curl, strings.NewReader(api.encode(values)))
@@ -294,7 +289,7 @@ func (api *API) request(curl string, values map[string]string) (*http.Request, e
 	return req, nil
 }
 
-// execute makes the given Akismet API call with the supplied
+// execute calls the given Akismet method with the given
 // parameters and returns the HTTP Response body and headers.
 func (api *API) execute(call APICall, values map[string]string) (string, http.Header, error) {
 
@@ -320,7 +315,7 @@ func (api *API) execute(call APICall, values map[string]string) (string, http.He
 }
 
 // An APIError represents an error or unexpected response
-// from Akismet in response to an API call.
+// from the Akismet REST API.
 type APIError struct {
 	// Type of API call.
 	Call APICall
@@ -368,8 +363,8 @@ func (e APIError) Error() string {
 	return s
 }
 
-// An AuthError indicates that Akismet was unable to verify an
-// API key.
+// An AuthError indicates that Akismet was unable to verify
+// the provided API key.
 type AuthError struct {
 	// API key being verified.
 	Key string
@@ -403,15 +398,14 @@ func (e AuthError) Error() string {
 
 // A Client executes an HTTP request and returns an HTTP
 // response. Its interface is satisfied by http.Client.
-// Provide your own implementation to manipulate HTTP
-// requests and/or responses.
+// Provide your own implementation to intercept gokismet's
+// HTTP requests and responses.
 type Client interface {
 	Do(req *http.Request) (*http.Response, error)
 }
 
-// clientWithHeaders decorates an existing Client with
-// additional request headers. It also satisfies the Client
-// interface.
+// clientWithHeaders decorates a Client with custom request
+// headers.
 type clientWithHeaders struct {
 	client  Client
 	headers map[string]string
@@ -462,7 +456,7 @@ type Comment struct {
 	// URL of the page being commented on.
 	Page string
 
-	// Publication time of the page being commented on.
+	// Publish date/time of the page being commented on.
 	PageTimestamp time.Time
 
 	// Name of the commenter.
@@ -482,8 +476,8 @@ type Comment struct {
 	// Content of the comment. May contain HTML.
 	Content string
 
-	// Time the comment was posted. Akismet uses the
-	// current time if one is not specified.
+	// Publish date/time of the comment. Akismet uses
+	// the current time if one is not specified.
 	Timestamp time.Time
 
 	// Comma-separated list of languages in use on the

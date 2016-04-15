@@ -64,7 +64,7 @@ https://akismet.com/development/api/#detailed-docs
 2. The two types of spam in Akismet.
 https://blog.akismet.com/2014/04/23/theres-a-ninja-in-your-akismet/
 
-3. Akismet Comment Types.
+3. Akismet comment types.
 https://blog.akismet.com/2012/06/19/pro-tip-tell-us-your-comment_type/
 */
 package gokismet

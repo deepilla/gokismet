@@ -3,9 +3,14 @@
 // As such, they're only executed if an API key and website are
 // provided on the command line.
 //
-// In order to ensure repeatable tests, the comment data is
-// supplemented with optional parameters that elicit specific
-// responses from Akismet.
+// In order to ensure repeatable tests, the comment data contains
+// special parameters that elicit specific responses from Akismet.
+// All calls set the Akismet test flag (even if it's not clear
+// what this actually does!).
+//
+// See https://akismet.com/development/api/#detailed-docs for info
+// on these special paramters.
+
 package gokismet_test
 
 import (
@@ -36,13 +41,10 @@ type TestAPIData struct {
 // API.CheckComment method.
 func TestAkismetCheckComment(t *testing.T) {
 
-	// See https://akismet.com/development/api/#detailed-docs for
-	// info on these special paramter values.
-
 	data := []TestAPIData{
 		{
-			// A user_role of "administrator" simulates a negative
-			// spam response.
+			// Setting user_role to "administrator" gives
+			// a negative spam response.
 			Params: map[string]string{
 				"is_test":   "true",
 				"user_role": "administrator",
@@ -50,8 +52,8 @@ func TestAkismetCheckComment(t *testing.T) {
 			Status: gokismet.StatusHam,
 		},
 		{
-			// A comment_author of "viagra-test-123" simulates a
-			// positive spam response.
+			// Setting comment_author to "viagra-test-123" gives
+			// a positive spam response.
 			Params: map[string]string{
 				"is_test":        "true",
 				"comment_author": "viagra-test-123",
@@ -59,7 +61,7 @@ func TestAkismetCheckComment(t *testing.T) {
 			Status: gokismet.StatusProbableSpam,
 		},
 		{
-			// Adding "test_discard" simulates a "pervasive" spam
+			// Adding "test_discard" gives a "pervasive" spam
 			// response.
 			Params: map[string]string{
 				"is_test":        "true",
@@ -89,12 +91,8 @@ func TestAkismetSubmitSpam(t *testing.T) {
 // TestAkismetSubmitSpam.
 func testAkismetSubmit(t *testing.T, submit ErrorFunc) {
 
-	// NOTE: The submit API calls are extremely generous
-	// about the parameters they accept. So there's only
-	// one test scenario because I can't come up with a
-	// failing case. I'm not even sure if the "is_test"
-	// flag has any effect on submit calls but certainly
-	// it can't do any harm.
+	// Akismet's submit-ham and submit-spam methods
+	// only have one valid response.
 	data := []TestAPIData{
 		{
 			Params: map[string]string{
@@ -114,7 +112,7 @@ func testAkismet(t *testing.T, fn StatusErrorFunc, data []TestAPIData) {
 		t.SkipNow()
 	}
 
-	// Create some test comment data. These values come from
+	// Define our test comment data. These values come from
 	// the Akismet API docs.
 	comment := &gokismet.Comment{
 		UserIP:      "127.0.0.1",
@@ -128,14 +126,12 @@ func testAkismet(t *testing.T, fn StatusErrorFunc, data []TestAPIData) {
 		Content:     "It means a lot that you would take the time to review our software. Thanks again.",
 	}
 
-	// Create an API object.
 	api := gokismet.NewAPI(*fAPIKey, *fSite)
 
 	for i, test := range data {
 
-		// Add any special values for this test to our standard
-		// comment data.
 		values := comment.Values()
+		// Add any special parameters to our comment data.
 		for k, v := range test.Params {
 			values[k] = v
 		}
@@ -143,7 +139,7 @@ func testAkismet(t *testing.T, fn StatusErrorFunc, data []TestAPIData) {
 		// Call the API.
 		status, err := fn(api, values)
 
-		// Test the returned spam status and error values.
+		// Check the returned spam status and error.
 		if status != test.Status {
 			t.Errorf("Test %d: Expected Spam Status %q, got %q", i+1,
 				spamStatusToString(test.Status), spamStatusToString(status))

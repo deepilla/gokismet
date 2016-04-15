@@ -18,7 +18,7 @@ For background on Akismet, see:
 
 - [Akismet API docs](https://akismet.com/development/api/#detailed-docs)
 - [Types of spam in Akismet](https://blog.akismet.com/2014/04/23/theres-a-ninja-in-your-akismet/ "There's a ninja in your Akismet")
-- [Akismet Comment Types](https://blog.akismet.com/2012/06/19/pro-tip-tell-us-your-comment_type/ "Pro Tip: Tell us your comment type")
+- [Akismet comment types](https://blog.akismet.com/2012/06/19/pro-tip-tell-us-your-comment_type/ "Pro Tip: Tell us your comment type")
 
 ## Installation
 
