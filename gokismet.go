@@ -304,8 +304,12 @@ func (api *API) execute(call APICall, values map[string]string) (string, http.He
 	if err != nil {
 		return "", nil, err
 	}
-
 	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return "", nil, newAPIError(call, "Status "+resp.Status, resp.Header)
+	}
+
 	body, err := ioutil.ReadAll(resp.Body)
 	if err != nil {
 		return "", nil, err
