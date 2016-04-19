@@ -46,7 +46,7 @@ values := map[string]string{
 status, err := api.CheckComment(values)
 ```
 
-Gokismet provides a `Comment` type to generate the key-value pairs. Define a `Comment` with the required fields, then call its Values` method to extract the key-value pairs.
+Gokismet provides a `Comment` type to generate the key-value pairs. Define a `Comment` with the required fields, then call its `Values` method to extract the key-value pairs.
 
 ```go
 comment := gokismet.Comment{
