@@ -71,7 +71,7 @@ const (
 )
 
 // An APICall represents a method of the Akismet REST API.
-type APICall uint
+type APICall uint32
 
 const (
 	APIVerifyKey APICall = iota
@@ -81,7 +81,7 @@ const (
 )
 
 // A SpamStatus is the result of a spam check.
-type SpamStatus uint
+type SpamStatus uint32
 
 // Note the two statuses for spam: StatusProbableSpam and
 // StatusDefiniteSpam. These correspond to the two types of spam
