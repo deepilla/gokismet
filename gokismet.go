@@ -109,52 +109,51 @@ type API struct {
 }
 
 // NewAPI returns an API that uses the standard library's default
-// HTTP client. The API key and website provided here are sent to
-// Akismet for verification on the first call to CheckComment,
-// SubmitHam, or SubmitSpam.
+// HTTP client. The provided API key and website are sent to Akismet
+// for verification on the first call to CheckComment, SubmitHam, or
+// SubmitSpam.
 func NewAPI(key string, site string) *API {
-	return NewAPIWithClient(key, site, http.DefaultClient)
+	return NewAPIWithClient(key, site, nil)
 }
 
 // NewAPIWithClient is the same as NewAPI but the caller provides
 // its own Client. Custom clients can be used to intercept HTTP
-// requests and responses (e.g. to add logging or other middleware).
+// requests and responses (e.g. to set custom request headers or
+// add logging or other middleware).
 func NewAPIWithClient(key string, site string, client Client) *API {
+
+	var nonNilClient Client
+
+	if client == nil {
+		nonNilClient = http.DefaultClient
+	} else {
+		nonNilClient = client
+	}
+
 	return &API{
 		key:    key,
 		site:   site,
-		client: client,
+		client: nonNilClient,
 	}
-}
-
-// SubmitHam notifies Akismet of legitimate comments flagged as
-// spam by a previous call to CheckComment. It takes comment data
-// in the form of key-value pairs. Aim to provide as many of the
-// original values as possible.
-func (api *API) SubmitHam(values map[string]string) error {
-	return api.submit(APISubmitHam, values)
-}
-
-// SubmitSpam notifies Akismet of spam that a previous call to
-// CheckComment failed to detect. It takes comment data in the
-// form of key-value pairs. Aim to provide as many of the original
-// values as possible.
-func (api *API) SubmitSpam(values map[string]string) error {
-	return api.submit(APISubmitSpam, values)
 }
 
 // CheckComment takes comment data in the form of key-value pairs
 // and checks it for spam.
 func (api *API) CheckComment(values map[string]string) (SpamStatus, error) {
 
-	if err := api.verify(); err != nil {
-		return StatusUnknown, err
+	if !api.verified {
+		if err := api.verify(); err != nil {
+			return StatusUnknown, err
+		}
+		api.verified = true
 	}
 
-	result, header, err := api.execute(APICheckComment, values)
+	body, header, err := api.execute(APICheckComment, values)
 	if err != nil {
 		return StatusUnknown, err
 	}
+
+	result := string(body)
 
 	switch {
 	case result == respHam:
@@ -168,21 +167,39 @@ func (api *API) CheckComment(values map[string]string) (SpamStatus, error) {
 	}
 }
 
-// submit is the implementation of the SubmitHam and
-// SubmitSpam methods.
+// SubmitHam notifies Akismet of legitimate comments flagged as
+// spam by CheckComment. It takes comment data in the form of
+// key-value pairs. For best results, provide as many of the
+// original values as possible.
+func (api *API) SubmitHam(values map[string]string) error {
+	return api.submit(APISubmitHam, values)
+}
+
+// SubmitSpam notifies Akismet of spam that CheckComment failed
+// to detect. It takes comment data in the form of key-value
+// pairs. For best results, provide as many of the original
+// values as possible.
+func (api *API) SubmitSpam(values map[string]string) error {
+	return api.submit(APISubmitSpam, values)
+}
+
+// submit implements the SubmitHam and SubmitSpam methods.
 func (api *API) submit(call APICall, values map[string]string) error {
 
-	if err := api.verify(); err != nil {
-		return err
+	if !api.verified {
+		if err := api.verify(); err != nil {
+			return err
+		}
+		api.verified = true
 	}
 
-	result, header, err := api.execute(call, values)
+	body, header, err := api.execute(call, values)
 	if err != nil {
 		return err
 	}
 
-	if result != respSubmitted {
-		return newAPIError(call, result, header)
+	if string(body) != respSubmitted {
+		return newAPIError(call, string(body), header)
 	}
 
 	return nil
@@ -192,46 +209,75 @@ func (api *API) submit(call APICall, values map[string]string) error {
 // All of the public API methods call verify first.
 func (api *API) verify() error {
 
-	if api.verified {
-		return nil
-	}
-
 	values := map[string]string{
 		pkKey:  api.key,
 		pkSite: api.site,
 	}
 
-	result, header, err := api.execute(APIVerifyKey, values)
+	body, header, err := api.execute(APIVerifyKey, values)
 	if err != nil {
 		return err
 	}
 
-	if result != respVerified {
-		return newAuthError(api.key, api.site, result, header)
+	if string(body) != respVerified {
+		return newAuthError(api.key, api.site, string(body), header)
 	}
 
-	api.verified = true
 	return nil
 }
 
-// url returns the Akismet REST URL for the given API call.
-func (api *API) url(call APICall) string {
+// execute calls the given Akismet method with the given
+// parameters and returns the HTTP Response body and headers.
+func (api *API) execute(call APICall, params map[string]string) ([]byte, http.Header, error) {
+
+	defaultParams := map[string]string{
+		pkSite: api.site,
+	}
+
+	endpoint := endpoint(call, api.key)
+
+	req, err := request(endpoint, mergeMaps(defaultParams, params))
+	if err != nil {
+		return nil, nil, err
+	}
+
+	resp, err := api.client.Do(req)
+	if err != nil {
+		return nil, nil, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, nil, newAPIError(call, "Status "+resp.Status, resp.Header)
+	}
+
+	body, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	return body, resp.Header, nil
+}
+
+// endpoint returns the REST endpoint URL for the given
+// Akismet API call and key.
+func endpoint(call APICall, key string) string {
 
 	var command string
-	var qualify bool
+	var qualified bool
 
 	switch call {
 	case APIVerifyKey:
 		command = reqVerifyKey
 	case APICheckComment:
 		command = reqCheckComment
-		qualify = true
+		qualified = true
 	case APISubmitHam:
 		command = reqSubmitHam
-		qualify = true
+		qualified = true
 	case APISubmitSpam:
 		command = reqSubmitSpam
-		qualify = true
+		qualified = true
 	default:
 		// If we reach this point there's a bug in our code.
 		// Might as well fail fast.
@@ -239,8 +285,8 @@ func (api *API) url(call APICall) string {
 	}
 
 	host := reqHost
-	if qualify {
-		host = api.key + "." + host
+	if qualified {
+		host = key + "." + host
 	}
 
 	u := url.URL{
@@ -252,32 +298,11 @@ func (api *API) url(call APICall) string {
 	return u.String()
 }
 
-// encode URL-encodes the given key value pairs and
-// concatenates them into a query string suitable for
-// Akismet requests. If not provided, the verified website
-// is added to the list of parameters.
-func (api *API) encode(values map[string]string) string {
-
-	uvals := url.Values{
-		// Default the website to the value used for
-		// API key verification.
-		pkSite: {api.site},
-	}
-
-	for k, v := range values {
-		if v != "" {
-			uvals.Set(k, v)
-		}
-	}
-
-	return uvals.Encode()
-}
-
 // request creates an HTTP Request from the provided endpoint
-// URL and map of query parameters.
-func (api *API) request(curl string, values map[string]string) (*http.Request, error) {
+// URL and query parameters.
+func request(endpoint string, params map[string]string) (*http.Request, error) {
 
-	req, err := http.NewRequest(reqMethod, curl, strings.NewReader(api.encode(values)))
+	req, err := http.NewRequest(reqMethod, endpoint, strings.NewReader(encodeParams(params)))
 	if err != nil {
 		return nil, err
 	}
@@ -289,33 +314,44 @@ func (api *API) request(curl string, values map[string]string) (*http.Request, e
 	return req, nil
 }
 
-// execute calls the given Akismet method with the given
-// parameters and returns the HTTP Response body and headers.
-func (api *API) execute(call APICall, values map[string]string) (string, http.Header, error) {
+// encodeParams URL-encodes the given key value pairs and
+// concatenates them into a query string suitable for
+// Akismet requests.
+func encodeParams(params map[string]string) string {
 
-	curl := api.url(call)
+	values := url.Values{}
 
-	req, err := api.request(curl, values)
-	if err != nil {
-		return "", nil, err
+	for k, v := range params {
+		if v != "" {
+			values.Set(k, v)
+		}
 	}
 
-	resp, err := api.client.Do(req)
-	if err != nil {
-		return "", nil, err
-	}
-	defer resp.Body.Close()
+	return values.Encode()
+}
 
-	if resp.StatusCode != http.StatusOK {
-		return "", nil, newAPIError(call, "Status "+resp.Status, resp.Header)
+// mergeMaps consolidates multiple string to string maps
+// into a single map. Values from later maps take priority
+// over those from earlier maps.
+func mergeMaps(maps ...map[string]string) map[string]string {
+
+	merge := func(dst, src map[string]string) map[string]string {
+		for k, v := range src {
+			if dst == nil {
+				dst = make(map[string]string)
+			}
+			dst[k] = v
+		}
+		return dst
 	}
 
-	body, err := ioutil.ReadAll(resp.Body)
-	if err != nil {
-		return "", nil, err
+	var values map[string]string
+
+	for _, m := range maps {
+		values = merge(values, m)
 	}
 
-	return string(body), resp.Header, nil
+	return values
 }
 
 // An APIError represents an error or unexpected response
@@ -498,31 +534,32 @@ type Comment struct {
 // SubmitHam and SubmitSpam.
 func (c *Comment) Values() map[string]string {
 
-	var values map[string]string
-
-	add := func(key, val string) {
-		if val != "" {
-			if values == nil {
-				values = make(map[string]string)
+	insert := func(dst map[string]string, key, value string) map[string]string {
+		if value != "" {
+			if dst == nil {
+				dst = make(map[string]string)
 			}
-			values[key] = val
+			dst[key] = value
 		}
+		return dst
 	}
 
-	add(pkUserIP, c.UserIP)
-	add(pkUserAgent, c.UserAgent)
-	add(pkReferer, c.Referer)
-	add(pkPage, c.Page)
-	add(pkPageTimestamp, formatTime(c.PageTimestamp))
-	add(pkType, c.Type)
-	add(pkAuthor, c.Author)
-	add(pkAuthorEmail, c.AuthorEmail)
-	add(pkAuthorPage, c.AuthorPage)
-	add(pkContent, c.Content)
-	add(pkTimestamp, formatTime(c.Timestamp))
-	add(pkSite, c.Site)
-	add(pkSiteCharset, c.SiteCharset)
-	add(pkSiteLanguage, c.SiteLanguage)
+	var values map[string]string
+
+	values = insert(values, pkUserIP, c.UserIP)
+	values = insert(values, pkUserAgent, c.UserAgent)
+	values = insert(values, pkReferer, c.Referer)
+	values = insert(values, pkPage, c.Page)
+	values = insert(values, pkPageTimestamp, formatTime(c.PageTimestamp))
+	values = insert(values, pkType, c.Type)
+	values = insert(values, pkAuthor, c.Author)
+	values = insert(values, pkAuthorEmail, c.AuthorEmail)
+	values = insert(values, pkAuthorPage, c.AuthorPage)
+	values = insert(values, pkContent, c.Content)
+	values = insert(values, pkTimestamp, formatTime(c.Timestamp))
+	values = insert(values, pkSite, c.Site)
+	values = insert(values, pkSiteCharset, c.SiteCharset)
+	values = insert(values, pkSiteLanguage, c.SiteLanguage)
 
 	return values
 }
