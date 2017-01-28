@@ -37,9 +37,9 @@ type TestAPIData struct {
 	Error  error
 }
 
-// TestAkismetCheckComment tests Akismet's responses to the
-// API.CheckComment method.
-func TestAkismetCheckComment(t *testing.T) {
+// TestAkismetCheck tests Akismet's responses to the
+// Checker.Check method.
+func TestAkismetCheck(t *testing.T) {
 
 	data := []TestAPIData{
 		{
@@ -76,13 +76,13 @@ func TestAkismetCheckComment(t *testing.T) {
 }
 
 // TestAkismetSubmitHam tests Akismet's responses to the
-// API.SubmitHam method.
+// Checker.SubmitHam method.
 func TestAkismetSubmitHam(t *testing.T) {
 	testAkismetSubmit(t, fnSubmitHam)
 }
 
 // TestAkismetSubmitSpam tests Akismet's responses to the
-// API.SubmitSpam method.
+// Checker.SubmitSpam method.
 func TestAkismetSubmitSpam(t *testing.T) {
 	testAkismetSubmit(t, fnSubmitSpam)
 }
@@ -126,7 +126,7 @@ func testAkismet(t *testing.T, fn StatusErrorFunc, data []TestAPIData) {
 		Content:     "It means a lot that you would take the time to review our software. Thanks again.",
 	}
 
-	api := gokismet.NewAPI(*fAPIKey, *fSite)
+	checker := gokismet.NewChecker(*fAPIKey, *fSite)
 
 	for i, test := range data {
 
@@ -137,7 +137,7 @@ func testAkismet(t *testing.T, fn StatusErrorFunc, data []TestAPIData) {
 		}
 
 		// Call the API.
-		status, err := fn(api, values)
+		status, err := fn(checker, values)
 
 		// Check the returned spam status and error.
 		if status != test.Status {

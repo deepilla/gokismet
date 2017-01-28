@@ -21,25 +21,25 @@ const (
 var UTCMinus5 = time.FixedZone("UTCMinus5", -5*60*60)
 
 var (
-	fnSubmitHam    = (*gokismet.API).SubmitHam
-	fnSubmitSpam   = (*gokismet.API).SubmitSpam
-	fnCheckComment = (*gokismet.API).CheckComment
+	fnSubmitHam    = (*gokismet.Checker).SubmitHam
+	fnSubmitSpam   = (*gokismet.Checker).SubmitSpam
+	fnCheckComment = (*gokismet.Checker).Check
 )
 
 type (
-	ErrorFunc       func(*gokismet.API, map[string]string) error
-	StatusErrorFunc func(*gokismet.API, map[string]string) (gokismet.SpamStatus, error)
+	ErrorFunc       func(*gokismet.Checker, map[string]string) error
+	StatusErrorFunc func(*gokismet.Checker, map[string]string) (gokismet.SpamStatus, error)
 )
 
 func toStatusErrorFunc(fn ErrorFunc) StatusErrorFunc {
-	return func(api *gokismet.API, values map[string]string) (gokismet.SpamStatus, error) {
-		return gokismet.StatusUnknown, fn(api, values)
+	return func(checker *gokismet.Checker, values map[string]string) (gokismet.SpamStatus, error) {
+		return gokismet.StatusUnknown, fn(checker, values)
 	}
 }
 
 func toErrorFunc(fn StatusErrorFunc) ErrorFunc {
-	return func(api *gokismet.API, values map[string]string) error {
-		_, err := fn(api, values)
+	return func(checker *gokismet.Checker, values map[string]string) error {
+		_, err := fn(checker, values)
 		return err
 	}
 }
@@ -398,7 +398,7 @@ var CommentData = []struct {
 	EncodedValues string
 }{
 	{
-		// NOTE: API should include the verified website by default.
+		// NOTE: Checker should include the verified website by default.
 		EncodedValues: "blog=http%3A%2F%2Fwww.example.com",
 	},
 	{
@@ -640,7 +640,7 @@ func TestCommentValues(t *testing.T) {
 	}
 }
 
-// TestRequestCheckComment tests the API.CheckComment request headers.
+// TestRequestCheckComment tests the Checker.Check request headers.
 func TestRequestCheckComment(t *testing.T) {
 
 	fn := toErrorFunc(fnCheckComment)
@@ -649,7 +649,7 @@ func TestRequestCheckComment(t *testing.T) {
 	testRequest(t, fn, url)
 }
 
-// TestRequestSubmitHam tests the API.SubmitHam request headers.
+// TestRequestSubmitHam tests the Checker.SubmitHam request headers.
 func TestRequestSubmitHam(t *testing.T) {
 
 	fn := fnSubmitHam
@@ -658,7 +658,7 @@ func TestRequestSubmitHam(t *testing.T) {
 	testRequest(t, fn, url)
 }
 
-// TestRequestSubmitSpam tests the API.SubmitSpam request headers.
+// TestRequestSubmitSpam tests the Checker.SubmitSpam request headers.
 func TestRequestSubmitSpam(t *testing.T) {
 
 	fn := fnSubmitSpam
@@ -668,7 +668,7 @@ func TestRequestSubmitSpam(t *testing.T) {
 }
 
 // testRequest is a general function for testing the request
-// headers of API calls.
+// headers of Checker calls.
 func testRequest(t *testing.T, fn ErrorFunc, url string) {
 
 	// Our client is set up to verify API keys.
@@ -687,7 +687,7 @@ func testRequest(t *testing.T, fn ErrorFunc, url string) {
 			URL:    url,
 			HeaderItems: map[string]string{
 				"Content-Type": "application/x-www-form-urlencoded",
-				"User-Agent":   "Gokismet/2.0",
+				"User-Agent":   "Gokismet/3.0",
 			},
 			Body: body,
 		}
@@ -698,11 +698,11 @@ func testRequest(t *testing.T, fn ErrorFunc, url string) {
 		}
 	}
 
-	api := gokismet.NewAPIWithClient(TESTAPIKEY, TESTSITE, client)
+	checker := gokismet.NewCheckerWithClient(TESTAPIKEY, TESTSITE, client)
 
 	// Execute the provided method.
-	// This will be CheckComment, SubmitHam, or SubmitSpam.
-	fn(api, nil)
+	// This will be Check, SubmitHam, or SubmitSpam.
+	fn(checker, nil)
 
 	// The first API call should yield two client requests:
 	// one to verify the key and one to make the actual API
@@ -715,7 +715,7 @@ func testRequest(t *testing.T, fn ErrorFunc, url string) {
 	for i, test := range CommentData {
 
 		client.ResetRequests()
-		fn(api, test.Values)
+		fn(checker, test.Values)
 
 		doTest(i+1, url, test.EncodedValues, 1, 0)
 	}
@@ -729,7 +729,7 @@ type TestResponseData struct {
 }
 
 // TestResponseCheckComment tests the status and error
-// values returned by API.CheckComment.
+// values returned by Checker.Check.
 func TestResponseCheckComment(t *testing.T) {
 
 	// Test scenarios for a spam check.
@@ -839,7 +839,7 @@ func TestResponseCheckComment(t *testing.T) {
 }
 
 // TestResponseSubmitHam tests the error values returned
-// by API.SubmitHam.
+// by Checker.SubmitHam.
 func TestResponseSubmitHam(t *testing.T) {
 
 	call := gokismet.APISubmitHam
@@ -850,7 +850,7 @@ func TestResponseSubmitHam(t *testing.T) {
 }
 
 // TestResponseSubmitSpam tests the error values returned
-// by API.SubmitSpam.
+// by Checker.SubmitSpam.
 func TestResponseSubmitSpam(t *testing.T) {
 
 	call := gokismet.APISubmitSpam
@@ -864,7 +864,7 @@ func TestResponseSubmitSpam(t *testing.T) {
 // and TestResponseSubmitSpam.
 func testResponseSubmit(t *testing.T, call gokismet.APICall, command string, submit ErrorFunc) {
 
-	// Test scenarios for the submit API calls.
+	// Test scenarios for the submit Checker calls.
 	data := []TestResponseData{
 		{
 			// Invalid HTTP status.
@@ -939,10 +939,10 @@ func testResponseSubmit(t *testing.T, call gokismet.APICall, command string, sub
 }
 
 // testResponse is a general function for testing the statuses
-// and errors returned by API calls.
+// and errors returned by Checker calls.
 func testResponse(t *testing.T, fn StatusErrorFunc, moredata []TestResponseData) {
 
-	// Test scenarios for all API calls.
+	// Test scenarios for all Checker calls.
 	data := []TestResponseData{
 		{
 			// Error during key verification.
@@ -1021,8 +1021,8 @@ func testResponse(t *testing.T, fn StatusErrorFunc, moredata []TestResponseData)
 			Responses: test.Responses,
 		}
 
-		api := gokismet.NewAPIWithClient(TESTAPIKEY, TESTSITE, client)
-		status, err := fn(api, nil)
+		checker := gokismet.NewCheckerWithClient(TESTAPIKEY, TESTSITE, client)
+		status, err := fn(checker, nil)
 
 		if status != test.Status {
 			t.Errorf("Test %d: Expected Spam Status %q, got %q", i+1,
@@ -1037,19 +1037,19 @@ func testResponse(t *testing.T, fn StatusErrorFunc, moredata []TestResponseData)
 }
 
 // TestWrapClientCheckComment tests custom HTTP headers
-// in API.CheckComment calls.
+// in Checker.Check calls.
 func TestWrapClientCheckComment(t *testing.T) {
 	testWrapClient(t, toErrorFunc(fnCheckComment))
 }
 
 // TestWrapClientSubmitHam tests custom HTTP headers
-// in API.SubmitHam calls.
+// in Checker.SubmitHam calls.
 func TestWrapClientSubmitHam(t *testing.T) {
 	testWrapClient(t, fnSubmitHam)
 }
 
 // TestWrapClientSubmitSpam tests custom HTTP headers
-// in API.SubmitSpam calls.
+// in Checker.SubmitSpam calls.
 func TestWrapClientSubmitSpam(t *testing.T) {
 	testWrapClient(t, fnSubmitSpam)
 }
@@ -1066,7 +1066,7 @@ func testWrapClient(t *testing.T, fn ErrorFunc) {
 			// Default headers.
 			Expected: map[string]string{
 				"Content-Type": "application/x-www-form-urlencoded",
-				"User-Agent":   "Gokismet/2.0",
+				"User-Agent":   "Gokismet/3.0",
 			},
 		},
 		{
@@ -1079,7 +1079,7 @@ func testWrapClient(t *testing.T, fn ErrorFunc) {
 			},
 			Expected: map[string]string{
 				"Content-Type":  "application/x-www-form-urlencoded",
-				"User-Agent":    "Gokismet/2.0",
+				"User-Agent":    "Gokismet/3.0",
 				"From":          "first.last@gmail.com",
 				"Cache-Control": "no-cache",
 			},
@@ -1096,7 +1096,7 @@ func testWrapClient(t *testing.T, fn ErrorFunc) {
 			},
 			Expected: map[string]string{
 				"Content-Type":  "application/x-www-form-urlencoded",
-				"User-Agent":    "Gokismet/2.0",
+				"User-Agent":    "Gokismet/3.0",
 				"From":          "first.last@gmail.com",
 				"Cache-Control": "no-cache",
 			},
@@ -1116,7 +1116,7 @@ func testWrapClient(t *testing.T, fn ErrorFunc) {
 			},
 			Expected: map[string]string{
 				"Content-Type":  "application/x-www-form-urlencoded",
-				"User-Agent":    "GokismetTest/1.0 | Gokismet/2.0",
+				"User-Agent":    "GokismetTest/1.0 | Gokismet/3.0",
 				"From":          "first.last@gmail.com",
 				"Cache-Control": "no-cache",
 			},
@@ -1132,8 +1132,8 @@ func testWrapClient(t *testing.T, fn ErrorFunc) {
 			wclient = gokismet.WrapClient(wclient, headers)
 		}
 
-		api := gokismet.NewAPIWithClient(TESTAPIKEY, TESTSITE, wclient)
-		fn(api, nil)
+		checker := gokismet.NewCheckerWithClient(TESTAPIKEY, TESTSITE, wclient)
+		fn(checker, nil)
 
 		// We expect 2 client requests: one for key verification and
 		// one for the actual API call.

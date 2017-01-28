@@ -21,11 +21,11 @@ func ExampleAPI_CheckComment() {
 		// etc...
 	}
 
-	// Create an API instance.
-	api := gokismet.NewAPI("YOUR_API_KEY", "http://your.website.com")
+	// Create a Checker instance.
+	checker := gokismet.NewChecker("YOUR_API_KEY", "http://your.website.com")
 
-	// Call CheckComment.
-	status, err := api.CheckComment(comment.Values())
+	// Call Check.
+	status, err := checker.Check(comment.Values())
 
 	fmt.Println(status, err)
 }
@@ -41,15 +41,15 @@ func ExampleWrapClient() {
 	// Wrap the default HTTP client with our headers.
 	client := gokismet.WrapClient(http.DefaultClient, headers)
 
-	// Initialise an API that uses our client.
-	api := gokismet.NewAPIWithClient("YOUR_API_KEY", "http://your.website.com", client)
+	// Initialise a Checker that uses our client.
+	checker := gokismet.NewCheckerWithClient("YOUR_API_KEY", "http://your.website.com", client)
 
 	comment := gokismet.Comment{
 	// Comment data goes here...
 	}
 
 	// API calls now have User Agent "MyApplication/1.0 | Gokismet/2.0".
-	status, err := api.CheckComment(comment.Values())
+	status, err := checker.Check(comment.Values())
 
 	fmt.Println(status, err)
 }

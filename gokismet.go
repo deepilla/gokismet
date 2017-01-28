@@ -12,7 +12,7 @@ import (
 // to the Akismet REST API. By default, all calls to Akismet
 // include this value in the HTTP request header. To override
 // it, use a custom Client (see WrapClient for an example).
-const UA = "Gokismet/2.0"
+const UA = "Gokismet/3.0"
 
 // Akismet parameter keys.
 const (
@@ -99,28 +99,27 @@ const (
 	StatusDefiniteSpam
 )
 
-// API provides spam checking and error reporting via the Akismet
-// REST API.
-type API struct {
+// Checker provides spam checking and error reporting via the
+// Akismet REST API.
+type Checker struct {
 	key      string
 	site     string
 	client   Client
 	verified bool
 }
 
-// NewAPI returns an API that uses the standard library's default
-// HTTP client. The provided API key and website are sent to Akismet
-// for verification on the first call to CheckComment, SubmitHam, or
-// SubmitSpam.
-func NewAPI(key string, site string) *API {
-	return NewAPIWithClient(key, site, nil)
+// NewChecker returns a Checker that uses Go's default HTTP
+// client for HTTP requests.
+func NewChecker(key string, site string) *Checker {
+	return NewCheckerWithClient(key, site, nil)
 }
 
-// NewAPIWithClient is the same as NewAPI but the caller provides
-// its own Client. Custom clients can be used to intercept HTTP
-// requests and responses (e.g. to set custom request headers or
-// add logging or other middleware).
-func NewAPIWithClient(key string, site string, client Client) *API {
+// NewCheckerWithClient returns a Checker that uses the provided
+// Client for HTTP requests. If the provided Client is nil, Go's
+// default HTTP client is used instead (as in NewChecker). Use a
+// custom client to intercept HTTP requests and responses (e.g.
+// to set custom request headers or apply middleware).
+func NewCheckerWithClient(key string, site string, client Client) *Checker {
 
 	var nonNilClient Client
 
@@ -130,25 +129,25 @@ func NewAPIWithClient(key string, site string, client Client) *API {
 		nonNilClient = client
 	}
 
-	return &API{
+	return &Checker{
 		key:    key,
 		site:   site,
 		client: nonNilClient,
 	}
 }
 
-// CheckComment takes comment data in the form of key-value pairs
+// Check takes comment data in the form of key-value pairs
 // and checks it for spam.
-func (api *API) CheckComment(values map[string]string) (SpamStatus, error) {
+func (ch *Checker) Check(values map[string]string) (SpamStatus, error) {
 
-	if !api.verified {
-		if err := api.verify(); err != nil {
+	if !ch.verified {
+		if err := ch.verify(); err != nil {
 			return StatusUnknown, err
 		}
-		api.verified = true
+		ch.verified = true
 	}
 
-	body, header, err := api.execute(APICheckComment, values)
+	body, header, err := ch.execute(APICheckComment, values)
 	if err != nil {
 		return StatusUnknown, err
 	}
@@ -167,33 +166,33 @@ func (api *API) CheckComment(values map[string]string) (SpamStatus, error) {
 	}
 }
 
-// SubmitHam notifies Akismet of legitimate comments flagged as
-// spam by CheckComment. It takes comment data in the form of
-// key-value pairs. For best results, provide as many of the
-// original values as possible.
-func (api *API) SubmitHam(values map[string]string) error {
-	return api.submit(APISubmitHam, values)
+// SubmitHam notifies Akismet of legitimate comments incorrectly
+// flagged as spam by Check. Like Check, it takes comment data
+// in the form of key-value pairs. For best results, provide as
+// many of the original values as possible.
+func (ch *Checker) SubmitHam(values map[string]string) error {
+	return ch.submit(APISubmitHam, values)
 }
 
-// SubmitSpam notifies Akismet of spam that CheckComment failed
-// to detect. It takes comment data in the form of key-value
-// pairs. For best results, provide as many of the original
-// values as possible.
-func (api *API) SubmitSpam(values map[string]string) error {
-	return api.submit(APISubmitSpam, values)
+// SubmitSpam notifies Akismet of spam that Check failed to
+// detect. Like Check, it takes comment data in the form of
+// key-value pairs. For best results, provide as many of the
+// original values as possible.
+func (ch *Checker) SubmitSpam(values map[string]string) error {
+	return ch.submit(APISubmitSpam, values)
 }
 
 // submit implements the SubmitHam and SubmitSpam methods.
-func (api *API) submit(call APICall, values map[string]string) error {
+func (ch *Checker) submit(call APICall, values map[string]string) error {
 
-	if !api.verified {
-		if err := api.verify(); err != nil {
+	if !ch.verified {
+		if err := ch.verify(); err != nil {
 			return err
 		}
-		api.verified = true
+		ch.verified = true
 	}
 
-	body, header, err := api.execute(call, values)
+	body, header, err := ch.execute(call, values)
 	if err != nil {
 		return err
 	}
@@ -205,43 +204,45 @@ func (api *API) submit(call APICall, values map[string]string) error {
 	return nil
 }
 
-// verify authorises an API key and website with Akismet.
-// All of the public API methods call verify first.
-func (api *API) verify() error {
+// verify authorises a Checker's API key and website with
+// Akismet. All public Checker methods should call verify
+// first.
+func (ch *Checker) verify() error {
 
 	values := map[string]string{
-		pkKey:  api.key,
-		pkSite: api.site,
+		pkKey:  ch.key,
+		pkSite: ch.site,
 	}
 
-	body, header, err := api.execute(APIVerifyKey, values)
+	body, header, err := ch.execute(APIVerifyKey, values)
 	if err != nil {
 		return err
 	}
 
 	if string(body) != respVerified {
-		return newAuthError(api.key, api.site, string(body), header)
+		return newAuthError(ch.key, ch.site, string(body), header)
 	}
 
 	return nil
 }
 
-// execute calls the given Akismet method with the given
-// parameters and returns the HTTP Response body and headers.
-func (api *API) execute(call APICall, params map[string]string) ([]byte, http.Header, error) {
+// execute calls the provided Akismet method with the
+// provided parameters and returns the HTTP Response body
+// and headers.
+func (ch *Checker) execute(call APICall, params map[string]string) ([]byte, http.Header, error) {
 
 	defaultParams := map[string]string{
-		pkSite: api.site,
+		pkSite: ch.site,
 	}
 
-	endpoint := endpoint(call, api.key)
+	endpoint := endpoint(call, ch.key)
 
 	req, err := request(endpoint, mergeMaps(defaultParams, params))
 	if err != nil {
 		return nil, nil, err
 	}
 
-	resp, err := api.client.Do(req)
+	resp, err := ch.client.Do(req)
 	if err != nil {
 		return nil, nil, err
 	}

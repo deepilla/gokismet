@@ -46,15 +46,15 @@ func ExampleNewAPIWithClient() {
 		os.Stdout,
 	}
 
-	// Initialise an API that uses the ClientWriter.
-	api := gokismet.NewAPIWithClient("YOUR_API_KEY", "http://your.website.com", client)
+	// Initialise a Checker that uses the ClientWriter.
+	checker := gokismet.NewCheckerWithClient("YOUR_API_KEY", "http://your.website.com", client)
 
 	comment := gokismet.Comment{
 	// Comment data goes here...
 	}
 
 	// API calls now log HTTP requests/responses to stdout.
-	status, err := api.CheckComment(comment.Values())
+	status, err := checker.Check(comment.Values())
 
 	fmt.Println(status, err)
 }
