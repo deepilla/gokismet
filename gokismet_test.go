@@ -313,11 +313,11 @@ func compareError(exp, got error) []error {
 		}
 	case *gokismet.AuthError:
 		if got, ok := got.(*gokismet.AuthError); ok {
-			return compareAuthError(exp, got)
+			return compareGokismetAuthError(exp, got)
 		}
-	case *gokismet.APIError:
-		if got, ok := got.(*gokismet.APIError); ok {
-			return compareAPIError(exp, got)
+	case *gokismet.Error:
+		if got, ok := got.(*gokismet.Error); ok {
+			return compareGokismetError(exp, got)
 		}
 	default:
 		return []error{
@@ -341,27 +341,27 @@ func compareTestClientError(exp, got *TestClientError) []error {
 	return errors
 }
 
-func compareAPIError(exp, got *gokismet.APIError) []error {
+func compareGokismetError(exp, got *gokismet.Error) []error {
 
 	var errors []error
 
 	if got.Call != exp.Call {
-		errors = append(errors, fmt.Errorf("Expected an APIError with Call %q, got %q",
+		errors = append(errors, fmt.Errorf("Expected an Error with Call %q, got %q",
 			apiCallToString(exp.Call), apiCallToString(got.Call)))
 	}
 
-	if got.Result != exp.Result {
-		errors = append(errors, fmt.Errorf("Expected an APIError with Result %q, got %q", exp.Result, got.Result))
+	if got.Response != exp.Response {
+		errors = append(errors, fmt.Errorf("Expected an Error with Response %q, got %q", exp.Response, got.Response))
 	}
 
-	if got.Help != exp.Help {
-		errors = append(errors, fmt.Errorf("Expected an APIError with Help Text %q, got %q", exp.Help, got.Help))
+	if got.Hint != exp.Hint {
+		errors = append(errors, fmt.Errorf("Expected an Error with Hint %q, got %q", exp.Hint, got.Hint))
 	}
 
 	return errors
 }
 
-func compareAuthError(exp, got *gokismet.AuthError) []error {
+func compareGokismetAuthError(exp, got *gokismet.AuthError) []error {
 
 	var errors []error
 
@@ -373,12 +373,12 @@ func compareAuthError(exp, got *gokismet.AuthError) []error {
 		errors = append(errors, fmt.Errorf("Expected an AuthError with Site %q, got %q", exp.Site, got.Site))
 	}
 
-	if got.Result != exp.Result {
-		errors = append(errors, fmt.Errorf("Expected an AuthError with Result %q, got %q", exp.Result, got.Result))
+	if got.Response != exp.Response {
+		errors = append(errors, fmt.Errorf("Expected an AuthError with Response %q, got %q", exp.Response, got.Response))
 	}
 
-	if got.Help != exp.Help {
-		errors = append(errors, fmt.Errorf("Expected an AuthError with Help Text %q, got %q", exp.Help, got.Help))
+	if got.Hint != exp.Hint {
+		errors = append(errors, fmt.Errorf("Expected an AuthError with Hint %q, got %q", exp.Hint, got.Hint))
 	}
 
 	return errors
@@ -745,9 +745,9 @@ func TestResponseCheckComment(t *testing.T) {
 					Status: http.StatusInternalServerError,
 				},
 			},
-			Error: &gokismet.APIError{
-				Call:   gokismet.APICheckComment,
-				Result: "Status 500 Internal Server Error",
+			Error: &gokismet.Error{
+				Call:     gokismet.APICheckComment,
+				Response: "Status 500 Internal Server Error",
 			},
 		},
 		{
@@ -807,9 +807,9 @@ func TestResponseCheckComment(t *testing.T) {
 					Status: http.StatusOK,
 				},
 			},
-			Error: &gokismet.APIError{
-				Call:   gokismet.APICheckComment,
-				Result: "invalid",
+			Error: &gokismet.Error{
+				Call:     gokismet.APICheckComment,
+				Response: "invalid",
 			},
 		},
 		{
@@ -827,10 +827,10 @@ func TestResponseCheckComment(t *testing.T) {
 					},
 				},
 			},
-			Error: &gokismet.APIError{
-				Call:   gokismet.APICheckComment,
-				Result: "invalid",
-				Help:   "A helpful diagnostic message",
+			Error: &gokismet.Error{
+				Call:     gokismet.APICheckComment,
+				Response: "invalid",
+				Hint:     "A helpful diagnostic message",
 			},
 		},
 	}
@@ -877,9 +877,9 @@ func testResponseSubmit(t *testing.T, call gokismet.APICall, command string, sub
 					Status: http.StatusInternalServerError,
 				},
 			},
-			Error: &gokismet.APIError{
-				Call:   call,
-				Result: "Status 500 Internal Server Error",
+			Error: &gokismet.Error{
+				Call:     call,
+				Response: "Status 500 Internal Server Error",
 			},
 		},
 		{
@@ -907,9 +907,9 @@ func testResponseSubmit(t *testing.T, call gokismet.APICall, command string, sub
 					Status: http.StatusOK,
 				},
 			},
-			Error: &gokismet.APIError{
-				Call:   call,
-				Result: "invalid",
+			Error: &gokismet.Error{
+				Call:     call,
+				Response: "invalid",
 			},
 		},
 		{
@@ -927,10 +927,10 @@ func testResponseSubmit(t *testing.T, call gokismet.APICall, command string, sub
 					},
 				},
 			},
-			Error: &gokismet.APIError{
-				Call:   call,
-				Result: "invalid",
-				Help:   "A helpful diagnostic message",
+			Error: &gokismet.Error{
+				Call:     call,
+				Response: "invalid",
+				Hint:     "A helpful diagnostic message",
 			},
 		},
 	}
@@ -959,9 +959,9 @@ func testResponse(t *testing.T, fn StatusErrorFunc, moredata []TestResponseData)
 				},
 			},
 			Error: &gokismet.AuthError{
-				Key:    "123456789abc",
-				Site:   "http://www.example.com",
-				Result: "invalid",
+				Key:      "123456789abc",
+				Site:     "http://www.example.com",
+				Response: "invalid",
 			},
 		},
 		{
@@ -976,10 +976,10 @@ func testResponse(t *testing.T, fn StatusErrorFunc, moredata []TestResponseData)
 				},
 			},
 			Error: &gokismet.AuthError{
-				Key:    "123456789abc",
-				Site:   "http://www.example.com",
-				Result: "invalid",
-				Help:   "A helpful diagnostic message",
+				Key:      "123456789abc",
+				Site:     "http://www.example.com",
+				Response: "invalid",
+				Hint:     "A helpful diagnostic message",
 			},
 		},
 		{
@@ -989,9 +989,9 @@ func testResponse(t *testing.T, fn StatusErrorFunc, moredata []TestResponseData)
 					Status: http.StatusMovedPermanently,
 				},
 			},
-			Error: &gokismet.APIError{
-				Call:   gokismet.APIVerifyKey,
-				Result: "Status 301 Moved Permanently",
+			Error: &gokismet.Error{
+				Call:     gokismet.APIVerifyKey,
+				Response: "Status 301 Moved Permanently",
 			},
 		},
 		{
@@ -1004,10 +1004,10 @@ func testResponse(t *testing.T, fn StatusErrorFunc, moredata []TestResponseData)
 					},
 				},
 			},
-			Error: &gokismet.APIError{
-				Call:   gokismet.APIVerifyKey,
-				Result: "Status 404 Not Found",
-				Help:   "A helpful diagnostic message",
+			Error: &gokismet.Error{
+				Call:     gokismet.APIVerifyKey,
+				Response: "Status 404 Not Found",
+				Hint:     "A helpful diagnostic message",
 			},
 		},
 	}
@@ -1151,14 +1151,14 @@ func testWrapClient(t *testing.T, fn ErrorFunc) {
 	}
 }
 
-// TestAPIErrorString tests string formatting for the
-// APIError type (mainly just for code coverage).
-func TestAPIErrorString(t *testing.T) {
+// TestErrorString tests string formatting for the
+// Error type (mainly just for code coverage).
+func TestErrorString(t *testing.T) {
 
 	data := []struct {
 		Call     gokismet.APICall
-		Result   string
-		Help     string
+		Response string
+		Hint     string
 		Expected string
 	}{
 		{
@@ -1167,18 +1167,18 @@ func TestAPIErrorString(t *testing.T) {
 		},
 		{
 			Call:     gokismet.APIVerifyKey,
-			Help:     "A helpful diagnostic message",
+			Hint:     "A helpful diagnostic message",
 			Expected: `Akismet returned an empty string (A helpful diagnostic message)`,
 		},
 		{
 			Call:     gokismet.APIVerifyKey,
-			Result:   "invalid",
+			Response: "invalid",
 			Expected: `Akismet returned "invalid"`,
 		},
 		{
 			Call:     gokismet.APIVerifyKey,
-			Result:   "invalid",
-			Help:     "A helpful diagnostic message",
+			Response: "invalid",
+			Hint:     "A helpful diagnostic message",
 			Expected: `Akismet returned "invalid" (A helpful diagnostic message)`,
 		},
 		{
@@ -1187,18 +1187,18 @@ func TestAPIErrorString(t *testing.T) {
 		},
 		{
 			Call:     gokismet.APICheckComment,
-			Help:     "A helpful diagnostic message",
+			Hint:     "A helpful diagnostic message",
 			Expected: `Check Comment returned an empty string (A helpful diagnostic message)`,
 		},
 		{
 			Call:     gokismet.APICheckComment,
-			Result:   "invalid",
+			Response: "invalid",
 			Expected: `Check Comment returned "invalid"`,
 		},
 		{
 			Call:     gokismet.APICheckComment,
-			Result:   "invalid",
-			Help:     "A helpful diagnostic message",
+			Response: "invalid",
+			Hint:     "A helpful diagnostic message",
 			Expected: `Check Comment returned "invalid" (A helpful diagnostic message)`,
 		},
 		{
@@ -1207,18 +1207,18 @@ func TestAPIErrorString(t *testing.T) {
 		},
 		{
 			Call:     gokismet.APISubmitHam,
-			Help:     "A helpful diagnostic message",
+			Hint:     "A helpful diagnostic message",
 			Expected: `Submit Ham returned an empty string (A helpful diagnostic message)`,
 		},
 		{
 			Call:     gokismet.APISubmitHam,
-			Result:   "invalid",
+			Response: "invalid",
 			Expected: `Submit Ham returned "invalid"`,
 		},
 		{
 			Call:     gokismet.APISubmitHam,
-			Result:   "invalid",
-			Help:     "A helpful diagnostic message",
+			Response: "invalid",
+			Hint:     "A helpful diagnostic message",
 			Expected: `Submit Ham returned "invalid" (A helpful diagnostic message)`,
 		},
 		{
@@ -1227,28 +1227,28 @@ func TestAPIErrorString(t *testing.T) {
 		},
 		{
 			Call:     gokismet.APISubmitSpam,
-			Help:     "A helpful diagnostic message",
+			Hint:     "A helpful diagnostic message",
 			Expected: `Submit Spam returned an empty string (A helpful diagnostic message)`,
 		},
 		{
 			Call:     gokismet.APISubmitSpam,
-			Result:   "invalid",
+			Response: "invalid",
 			Expected: `Submit Spam returned "invalid"`,
 		},
 		{
 			Call:     gokismet.APISubmitSpam,
-			Result:   "invalid",
-			Help:     "A helpful diagnostic message",
+			Response: "invalid",
+			Hint:     "A helpful diagnostic message",
 			Expected: `Submit Spam returned "invalid" (A helpful diagnostic message)`,
 		},
 	}
 
 	for i, test := range data {
 
-		err := &gokismet.APIError{
-			Call:   test.Call,
-			Result: test.Result,
-			Help:   test.Help,
+		err := &gokismet.Error{
+			Call:     test.Call,
+			Response: test.Response,
+			Hint:     test.Hint,
 		}
 
 		if got := err.Error(); got != test.Expected {
@@ -1262,34 +1262,34 @@ func TestAPIErrorString(t *testing.T) {
 func TestAuthErrorString(t *testing.T) {
 
 	data := []struct {
-		Key    string
-		Site   string
-		Result string
-		Help   string
-		Error  string
+		Key      string
+		Site     string
+		Response string
+		Hint     string
+		Error    string
 	}{
 		{
-			Key:    TESTAPIKEY,
-			Site:   TESTSITE,
-			Result: "invalid",
-			Error:  `Akismet failed to verify key "123456789abc" for site "http://www.example.com"`,
+			Key:      TESTAPIKEY,
+			Site:     TESTSITE,
+			Response: "invalid",
+			Error:    `Akismet failed to verify key "123456789abc" for site "http://www.example.com"`,
 		},
 		{
-			Key:    TESTAPIKEY,
-			Site:   TESTSITE,
-			Result: "invalid",
-			Help:   "A helpful diagnostic message",
-			Error:  `Akismet failed to verify key "123456789abc" for site "http://www.example.com" (A helpful diagnostic message)`,
+			Key:      TESTAPIKEY,
+			Site:     TESTSITE,
+			Response: "invalid",
+			Hint:     "A helpful diagnostic message",
+			Error:    `Akismet failed to verify key "123456789abc" for site "http://www.example.com" (A helpful diagnostic message)`,
 		},
 	}
 
 	for i, test := range data {
 
 		err := &gokismet.AuthError{
-			Key:    test.Key,
-			Site:   test.Site,
-			Result: test.Result,
-			Help:   test.Help,
+			Key:      test.Key,
+			Site:     test.Site,
+			Response: test.Response,
+			Hint:     test.Hint,
 		}
 
 		if msg := err.Error(); msg != test.Error {

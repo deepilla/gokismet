@@ -163,7 +163,7 @@ func (ch *Checker) Check(values map[string]string) (Status, error) {
 	case result == respSpam:
 		return StatusSpam, nil
 	default:
-		return StatusUnknown, newAPIError(APICheckComment, result, header)
+		return StatusUnknown, newError(APICheckComment, result, header)
 	}
 }
 
@@ -199,7 +199,7 @@ func (ch *Checker) submit(call APICall, values map[string]string) error {
 	}
 
 	if string(body) != respSubmitted {
-		return newAPIError(call, string(body), header)
+		return newError(call, string(body), header)
 	}
 
 	return nil
@@ -250,7 +250,7 @@ func (ch *Checker) execute(call APICall, params map[string]string) ([]byte, http
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, nil, newAPIError(call, "Status "+resp.Status, resp.Header)
+		return nil, nil, newError(call, "Status "+resp.Status, resp.Header)
 	}
 
 	body, err := ioutil.ReadAll(resp.Body)
@@ -356,26 +356,26 @@ func mergeMaps(maps ...map[string]string) map[string]string {
 	return values
 }
 
-// An APIError represents an error or unexpected response
-// from the Akismet REST API.
-type APIError struct {
+// An Error represents an unexpected response from the
+// Akismet REST API.
+type Error struct {
 	// Type of API call.
 	Call APICall
 	// Value returned by Akismet.
-	Result string
+	Response string
 	// Additional error info from Akismet (may be empty).
-	Help string
+	Hint string
 }
 
-func newAPIError(call APICall, result string, header http.Header) *APIError {
-	return &APIError{
-		Call:   call,
-		Result: result,
-		Help:   header.Get(hdrHelp),
+func newError(call APICall, response string, header http.Header) *Error {
+	return &Error{
+		Call:     call,
+		Response: response,
+		Hint:     header.Get(hdrHelp),
 	}
 }
 
-func (e APIError) Error() string {
+func (e Error) Error() string {
 
 	var s string
 
@@ -392,14 +392,14 @@ func (e APIError) Error() string {
 
 	s += " returned "
 
-	if e.Result == "" {
+	if e.Response == "" {
 		s += "an empty string"
 	} else {
-		s += "\"" + e.Result + "\""
+		s += "\"" + e.Response + "\""
 	}
 
-	if e.Help != "" {
-		s += " (" + e.Help + ")"
+	if e.Hint != "" {
+		s += " (" + e.Hint + ")"
 	}
 
 	return s
@@ -413,17 +413,17 @@ type AuthError struct {
 	// Website associated with the API key.
 	Site string
 	// Value returned by Akismet.
-	Result string
+	Response string
 	// Additional error info from Akismet (may be empty).
-	Help string
+	Hint string
 }
 
-func newAuthError(key string, site string, result string, header http.Header) *AuthError {
+func newAuthError(key string, site string, response string, header http.Header) *AuthError {
 	return &AuthError{
-		Key:    key,
-		Site:   site,
-		Result: result,
-		Help:   header.Get(hdrHelp),
+		Key:      key,
+		Site:     site,
+		Response: response,
+		Hint:     header.Get(hdrHelp),
 	}
 }
 
@@ -431,8 +431,8 @@ func (e AuthError) Error() string {
 
 	s := "Akismet failed to verify key \"" + e.Key + "\" for site \"" + e.Site + "\""
 
-	if e.Help != "" {
-		s += " (" + e.Help + ")"
+	if e.Hint != "" {
+		s += " (" + e.Hint + ")"
 	}
 
 	return s
