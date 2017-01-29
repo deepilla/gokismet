@@ -216,20 +216,20 @@ func (c *FieldSetter) NumFields() int {
 	return c.val.NumField()
 }
 
-// apiCallToString returns a string representation of an
-// APICall enum value.
-func apiCallToString(call gokismet.APICall) string {
-	switch call {
-	case gokismet.APIVerifyKey:
-		return "VerifyKey"
-	case gokismet.APICheckComment:
-		return "CheckComment"
-	case gokismet.APISubmitHam:
+// actionToString returns a string representation of an
+// Action enum value.
+func actionToString(op gokismet.Action) string {
+	switch op {
+	case gokismet.Authenticate:
+		return "Authenticate"
+	case gokismet.Check:
+		return "Check"
+	case gokismet.SubmitHam:
 		return "SubmitHam"
-	case gokismet.APISubmitSpam:
+	case gokismet.SubmitSpam:
 		return "SubmitSpam"
 	default:
-		return "!Invalid API Call!"
+		return "!Invalid Action!"
 	}
 }
 
@@ -345,9 +345,9 @@ func compareGokismetError(exp, got *gokismet.Error) []error {
 
 	var errors []error
 
-	if got.Call != exp.Call {
-		errors = append(errors, fmt.Errorf("Expected an Error with Call %q, got %q",
-			apiCallToString(exp.Call), apiCallToString(got.Call)))
+	if got.Action != exp.Action {
+		errors = append(errors, fmt.Errorf("Expected an Error with Action %q, got %q",
+			actionToString(exp.Action), actionToString(got.Action)))
 	}
 
 	if got.Response != exp.Response {
@@ -746,7 +746,7 @@ func TestResponseCheckComment(t *testing.T) {
 				},
 			},
 			Error: &gokismet.Error{
-				Call:     gokismet.APICheckComment,
+				Action:   gokismet.Check,
 				Response: "Status 500 Internal Server Error",
 			},
 		},
@@ -808,7 +808,7 @@ func TestResponseCheckComment(t *testing.T) {
 				},
 			},
 			Error: &gokismet.Error{
-				Call:     gokismet.APICheckComment,
+				Action:   gokismet.Check,
 				Response: "invalid",
 			},
 		},
@@ -828,7 +828,7 @@ func TestResponseCheckComment(t *testing.T) {
 				},
 			},
 			Error: &gokismet.Error{
-				Call:     gokismet.APICheckComment,
+				Action:   gokismet.Check,
 				Response: "invalid",
 				Hint:     "A helpful diagnostic message",
 			},
@@ -842,27 +842,27 @@ func TestResponseCheckComment(t *testing.T) {
 // by Checker.SubmitHam.
 func TestResponseSubmitHam(t *testing.T) {
 
-	call := gokismet.APISubmitHam
+	op := gokismet.SubmitHam
 	submit := fnSubmitHam
 	command := "submit-ham"
 
-	testResponseSubmit(t, call, command, submit)
+	testResponseSubmit(t, op, command, submit)
 }
 
 // TestResponseSubmitSpam tests the error values returned
 // by Checker.SubmitSpam.
 func TestResponseSubmitSpam(t *testing.T) {
 
-	call := gokismet.APISubmitSpam
+	op := gokismet.SubmitSpam
 	submit := fnSubmitSpam
 	command := "submit-spam"
 
-	testResponseSubmit(t, call, command, submit)
+	testResponseSubmit(t, op, command, submit)
 }
 
 // testResponseSubmit is a helper for TestResponseSubmitHam
 // and TestResponseSubmitSpam.
-func testResponseSubmit(t *testing.T, call gokismet.APICall, command string, submit ErrorFunc) {
+func testResponseSubmit(t *testing.T, op gokismet.Action, command string, submit ErrorFunc) {
 
 	// Test scenarios for the submit Checker calls.
 	data := []TestResponseData{
@@ -878,7 +878,7 @@ func testResponseSubmit(t *testing.T, call gokismet.APICall, command string, sub
 				},
 			},
 			Error: &gokismet.Error{
-				Call:     call,
+				Action:   op,
 				Response: "Status 500 Internal Server Error",
 			},
 		},
@@ -908,7 +908,7 @@ func testResponseSubmit(t *testing.T, call gokismet.APICall, command string, sub
 				},
 			},
 			Error: &gokismet.Error{
-				Call:     call,
+				Action:   op,
 				Response: "invalid",
 			},
 		},
@@ -928,7 +928,7 @@ func testResponseSubmit(t *testing.T, call gokismet.APICall, command string, sub
 				},
 			},
 			Error: &gokismet.Error{
-				Call:     call,
+				Action:   op,
 				Response: "invalid",
 				Hint:     "A helpful diagnostic message",
 			},
@@ -990,7 +990,7 @@ func testResponse(t *testing.T, fn StatusErrorFunc, moredata []TestResponseData)
 				},
 			},
 			Error: &gokismet.Error{
-				Call:     gokismet.APIVerifyKey,
+				Action:   gokismet.Authenticate,
 				Response: "Status 301 Moved Permanently",
 			},
 		},
@@ -1005,7 +1005,7 @@ func testResponse(t *testing.T, fn StatusErrorFunc, moredata []TestResponseData)
 				},
 			},
 			Error: &gokismet.Error{
-				Call:     gokismet.APIVerifyKey,
+				Action:   gokismet.Authenticate,
 				Response: "Status 404 Not Found",
 				Hint:     "A helpful diagnostic message",
 			},
@@ -1156,87 +1156,87 @@ func testWrapClient(t *testing.T, fn ErrorFunc) {
 func TestErrorString(t *testing.T) {
 
 	data := []struct {
-		Call     gokismet.APICall
+		Action   gokismet.Action
 		Response string
 		Hint     string
 		Expected string
 	}{
 		{
-			Call:     gokismet.APIVerifyKey,
+			Action:   gokismet.Authenticate,
 			Expected: `Akismet returned an empty string`,
 		},
 		{
-			Call:     gokismet.APIVerifyKey,
+			Action:   gokismet.Authenticate,
 			Hint:     "A helpful diagnostic message",
 			Expected: `Akismet returned an empty string (A helpful diagnostic message)`,
 		},
 		{
-			Call:     gokismet.APIVerifyKey,
+			Action:   gokismet.Authenticate,
 			Response: "invalid",
 			Expected: `Akismet returned "invalid"`,
 		},
 		{
-			Call:     gokismet.APIVerifyKey,
+			Action:   gokismet.Authenticate,
 			Response: "invalid",
 			Hint:     "A helpful diagnostic message",
 			Expected: `Akismet returned "invalid" (A helpful diagnostic message)`,
 		},
 		{
-			Call:     gokismet.APICheckComment,
+			Action:   gokismet.Check,
 			Expected: `Check Comment returned an empty string`,
 		},
 		{
-			Call:     gokismet.APICheckComment,
+			Action:   gokismet.Check,
 			Hint:     "A helpful diagnostic message",
 			Expected: `Check Comment returned an empty string (A helpful diagnostic message)`,
 		},
 		{
-			Call:     gokismet.APICheckComment,
+			Action:   gokismet.Check,
 			Response: "invalid",
 			Expected: `Check Comment returned "invalid"`,
 		},
 		{
-			Call:     gokismet.APICheckComment,
+			Action:   gokismet.Check,
 			Response: "invalid",
 			Hint:     "A helpful diagnostic message",
 			Expected: `Check Comment returned "invalid" (A helpful diagnostic message)`,
 		},
 		{
-			Call:     gokismet.APISubmitHam,
+			Action:   gokismet.SubmitHam,
 			Expected: `Submit Ham returned an empty string`,
 		},
 		{
-			Call:     gokismet.APISubmitHam,
+			Action:   gokismet.SubmitHam,
 			Hint:     "A helpful diagnostic message",
 			Expected: `Submit Ham returned an empty string (A helpful diagnostic message)`,
 		},
 		{
-			Call:     gokismet.APISubmitHam,
+			Action:   gokismet.SubmitHam,
 			Response: "invalid",
 			Expected: `Submit Ham returned "invalid"`,
 		},
 		{
-			Call:     gokismet.APISubmitHam,
+			Action:   gokismet.SubmitHam,
 			Response: "invalid",
 			Hint:     "A helpful diagnostic message",
 			Expected: `Submit Ham returned "invalid" (A helpful diagnostic message)`,
 		},
 		{
-			Call:     gokismet.APISubmitSpam,
+			Action:   gokismet.SubmitSpam,
 			Expected: `Submit Spam returned an empty string`,
 		},
 		{
-			Call:     gokismet.APISubmitSpam,
+			Action:   gokismet.SubmitSpam,
 			Hint:     "A helpful diagnostic message",
 			Expected: `Submit Spam returned an empty string (A helpful diagnostic message)`,
 		},
 		{
-			Call:     gokismet.APISubmitSpam,
+			Action:   gokismet.SubmitSpam,
 			Response: "invalid",
 			Expected: `Submit Spam returned "invalid"`,
 		},
 		{
-			Call:     gokismet.APISubmitSpam,
+			Action:   gokismet.SubmitSpam,
 			Response: "invalid",
 			Hint:     "A helpful diagnostic message",
 			Expected: `Submit Spam returned "invalid" (A helpful diagnostic message)`,
@@ -1246,7 +1246,7 @@ func TestErrorString(t *testing.T) {
 	for i, test := range data {
 
 		err := &gokismet.Error{
-			Call:     test.Call,
+			Action:   test.Action,
 			Response: test.Response,
 			Hint:     test.Hint,
 		}

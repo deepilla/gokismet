@@ -70,14 +70,17 @@ const (
 	respDiscard   = "discard"
 )
 
-// An APICall represents a method of the Akismet REST API.
-type APICall uint32
+// An Action indicates the type of an Akismet call.
+type Action uint32
 
+// Types of Akismet call. If gokismet encounters a problem,
+// the returned Error will contain the Action along with the
+// response from Akismet.
 const (
-	APIVerifyKey APICall = iota
-	APICheckComment
-	APISubmitHam
-	APISubmitSpam
+	Authenticate Action = iota
+	Check
+	SubmitHam
+	SubmitSpam
 )
 
 // A Status is the result of a spam check.
@@ -148,7 +151,7 @@ func (ch *Checker) Check(values map[string]string) (Status, error) {
 		ch.verified = true
 	}
 
-	body, header, err := ch.execute(APICheckComment, values)
+	body, header, err := ch.execute(Check, values)
 	if err != nil {
 		return StatusUnknown, err
 	}
@@ -163,7 +166,7 @@ func (ch *Checker) Check(values map[string]string) (Status, error) {
 	case result == respSpam:
 		return StatusSpam, nil
 	default:
-		return StatusUnknown, newError(APICheckComment, result, header)
+		return StatusUnknown, newError(Check, result, header)
 	}
 }
 
@@ -172,7 +175,7 @@ func (ch *Checker) Check(values map[string]string) (Status, error) {
 // in the form of key-value pairs. For best results, provide as
 // many of the original values as possible.
 func (ch *Checker) SubmitHam(values map[string]string) error {
-	return ch.submit(APISubmitHam, values)
+	return ch.submit(SubmitHam, values)
 }
 
 // SubmitSpam notifies Akismet of spam that Check failed to
@@ -180,11 +183,11 @@ func (ch *Checker) SubmitHam(values map[string]string) error {
 // key-value pairs. For best results, provide as many of the
 // original values as possible.
 func (ch *Checker) SubmitSpam(values map[string]string) error {
-	return ch.submit(APISubmitSpam, values)
+	return ch.submit(SubmitSpam, values)
 }
 
 // submit implements the SubmitHam and SubmitSpam methods.
-func (ch *Checker) submit(call APICall, values map[string]string) error {
+func (ch *Checker) submit(op Action, values map[string]string) error {
 
 	if !ch.verified {
 		if err := ch.verify(); err != nil {
@@ -193,13 +196,13 @@ func (ch *Checker) submit(call APICall, values map[string]string) error {
 		ch.verified = true
 	}
 
-	body, header, err := ch.execute(call, values)
+	body, header, err := ch.execute(op, values)
 	if err != nil {
 		return err
 	}
 
 	if string(body) != respSubmitted {
-		return newError(call, string(body), header)
+		return newError(op, string(body), header)
 	}
 
 	return nil
@@ -215,7 +218,7 @@ func (ch *Checker) verify() error {
 		pkSite: ch.site,
 	}
 
-	body, header, err := ch.execute(APIVerifyKey, values)
+	body, header, err := ch.execute(Authenticate, values)
 	if err != nil {
 		return err
 	}
@@ -230,13 +233,13 @@ func (ch *Checker) verify() error {
 // execute calls the provided Akismet method with the
 // provided parameters and returns the HTTP Response body
 // and headers.
-func (ch *Checker) execute(call APICall, params map[string]string) ([]byte, http.Header, error) {
+func (ch *Checker) execute(op Action, params map[string]string) ([]byte, http.Header, error) {
 
 	defaultParams := map[string]string{
 		pkSite: ch.site,
 	}
 
-	endpoint := endpoint(call, ch.key)
+	endpoint := endpoint(op, ch.key)
 
 	req, err := request(endpoint, mergeMaps(defaultParams, params))
 	if err != nil {
@@ -250,7 +253,7 @@ func (ch *Checker) execute(call APICall, params map[string]string) ([]byte, http
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, nil, newError(call, "Status "+resp.Status, resp.Header)
+		return nil, nil, newError(op, "Status "+resp.Status, resp.Header)
 	}
 
 	body, err := ioutil.ReadAll(resp.Body)
@@ -263,21 +266,21 @@ func (ch *Checker) execute(call APICall, params map[string]string) ([]byte, http
 
 // endpoint returns the REST endpoint URL for the given
 // Akismet API call and key.
-func endpoint(call APICall, key string) string {
+func endpoint(op Action, key string) string {
 
 	var command string
 	var qualified bool
 
-	switch call {
-	case APIVerifyKey:
+	switch op {
+	case Authenticate:
 		command = reqVerifyKey
-	case APICheckComment:
+	case Check:
 		command = reqCheckComment
 		qualified = true
-	case APISubmitHam:
+	case SubmitHam:
 		command = reqSubmitHam
 		qualified = true
-	case APISubmitSpam:
+	case SubmitSpam:
 		command = reqSubmitSpam
 		qualified = true
 	default:
@@ -360,16 +363,16 @@ func mergeMaps(maps ...map[string]string) map[string]string {
 // Akismet REST API.
 type Error struct {
 	// Type of API call.
-	Call APICall
+	Action Action
 	// Value returned by Akismet.
 	Response string
 	// Additional error info from Akismet (may be empty).
 	Hint string
 }
 
-func newError(call APICall, response string, header http.Header) *Error {
+func newError(op Action, response string, header http.Header) *Error {
 	return &Error{
-		Call:     call,
+		Action:   op,
 		Response: response,
 		Hint:     header.Get(hdrHelp),
 	}
@@ -379,12 +382,12 @@ func (e Error) Error() string {
 
 	var s string
 
-	switch e.Call {
-	case APICheckComment:
+	switch e.Action {
+	case Check:
 		s = "Check Comment"
-	case APISubmitHam:
+	case SubmitHam:
 		s = "Submit Ham"
-	case APISubmitSpam:
+	case SubmitSpam:
 		s = "Submit Spam"
 	default:
 		s = "Akismet"
