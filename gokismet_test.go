@@ -28,11 +28,11 @@ var (
 
 type (
 	ErrorFunc       func(*gokismet.Checker, map[string]string) error
-	StatusErrorFunc func(*gokismet.Checker, map[string]string) (gokismet.SpamStatus, error)
+	StatusErrorFunc func(*gokismet.Checker, map[string]string) (gokismet.Status, error)
 )
 
 func toStatusErrorFunc(fn ErrorFunc) StatusErrorFunc {
-	return func(checker *gokismet.Checker, values map[string]string) (gokismet.SpamStatus, error) {
+	return func(checker *gokismet.Checker, values map[string]string) (gokismet.Status, error) {
 		return gokismet.StatusUnknown, fn(checker, values)
 	}
 }
@@ -233,18 +233,18 @@ func apiCallToString(call gokismet.APICall) string {
 	}
 }
 
-// spamStatusToString returns a string representation of a
-// SpamStatus enum value.
-func spamStatusToString(status gokismet.SpamStatus) string {
+// statusToString returns a string representation of a
+// Status enum value.
+func statusToString(status gokismet.Status) string {
 	switch status {
 	case gokismet.StatusUnknown:
 		return "Unknown"
-	case gokismet.StatusHam:
+	case gokismet.StatusOK:
 		return "Not Spam"
-	case gokismet.StatusProbableSpam:
-		return "Probable Spam"
-	case gokismet.StatusDefiniteSpam:
-		return "Definite Spam"
+	case gokismet.StatusSpam:
+		return "Spam"
+	case gokismet.StatusBlatantSpam:
+		return "Blatant Spam"
 	default:
 		return "!Invalid Status!"
 	}
@@ -724,7 +724,7 @@ func testRequest(t *testing.T, fn ErrorFunc, url string) {
 // A test data type for the TestResponseXXX functions.
 type TestResponseData struct {
 	Responses map[string]*ResponseInfo
-	Status    gokismet.SpamStatus
+	Status    gokismet.Status
 	Error     error
 }
 
@@ -762,7 +762,7 @@ func TestResponseCheckComment(t *testing.T) {
 					Status: http.StatusOK,
 				},
 			},
-			Status: gokismet.StatusHam,
+			Status: gokismet.StatusOK,
 		},
 		{
 			// Positive spam response.
@@ -776,7 +776,7 @@ func TestResponseCheckComment(t *testing.T) {
 					Status: http.StatusOK,
 				},
 			},
-			Status: gokismet.StatusProbableSpam,
+			Status: gokismet.StatusSpam,
 		},
 		{
 			// Pervasive spam response.
@@ -793,7 +793,7 @@ func TestResponseCheckComment(t *testing.T) {
 					},
 				},
 			},
-			Status: gokismet.StatusDefiniteSpam,
+			Status: gokismet.StatusBlatantSpam,
 		},
 		{
 			// Error response.
@@ -1026,7 +1026,7 @@ func testResponse(t *testing.T, fn StatusErrorFunc, moredata []TestResponseData)
 
 		if status != test.Status {
 			t.Errorf("Test %d: Expected Spam Status %q, got %q", i+1,
-				spamStatusToString(test.Status), spamStatusToString(status))
+				statusToString(test.Status), statusToString(status))
 		}
 
 		errors := compareError(test.Error, err)

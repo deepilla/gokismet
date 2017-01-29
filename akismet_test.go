@@ -33,7 +33,7 @@ var (
 // TestAPIData represents a test for the testAPI function.
 type TestAPIData struct {
 	Params map[string]string
-	Status gokismet.SpamStatus
+	Status gokismet.Status
 	Error  error
 }
 
@@ -49,7 +49,7 @@ func TestAkismetCheck(t *testing.T) {
 				"is_test":   "true",
 				"user_role": "administrator",
 			},
-			Status: gokismet.StatusHam,
+			Status: gokismet.StatusOK,
 		},
 		{
 			// Setting comment_author to "viagra-test-123" gives
@@ -58,7 +58,7 @@ func TestAkismetCheck(t *testing.T) {
 				"is_test":        "true",
 				"comment_author": "viagra-test-123",
 			},
-			Status: gokismet.StatusProbableSpam,
+			Status: gokismet.StatusSpam,
 		},
 		{
 			// Adding "test_discard" gives a "pervasive" spam
@@ -68,7 +68,7 @@ func TestAkismetCheck(t *testing.T) {
 				"comment_author": "viagra-test-123",
 				"test_discard":   "true",
 			},
-			Status: gokismet.StatusDefiniteSpam,
+			Status: gokismet.StatusBlatantSpam,
 		},
 	}
 
@@ -142,7 +142,7 @@ func testAkismet(t *testing.T, fn StatusErrorFunc, data []TestAPIData) {
 		// Check the returned spam status and error.
 		if status != test.Status {
 			t.Errorf("Test %d: Expected Spam Status %q, got %q", i+1,
-				spamStatusToString(test.Status), spamStatusToString(status))
+				statusToString(test.Status), statusToString(status))
 		}
 
 		errors := compareError(test.Error, err)

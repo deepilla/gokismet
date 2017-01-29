@@ -80,23 +80,24 @@ const (
 	APISubmitSpam
 )
 
-// A SpamStatus is the result of a spam check.
-type SpamStatus uint32
+// A Status is the result of a spam check.
+type Status uint32
 
-// Note the two statuses for spam: StatusProbableSpam and
-// StatusDefiniteSpam. These correspond to the two types of spam
-// defined by Akismet: normal spam and "pervasive" spam. Clients
-// may choose to treat the two types differently. The Akismet
-// Wordpress plugin, for example, puts normal spam into a queue
-// for review, while pervasive spam is discarded immediately.
+// Note the two statuses for spam: StatusSpam and StatusBlatantSpam.
+// These correspond to the two types of spam defined by Akismet:
+// normal spam and "pervasive" spam.
 //
-// See http://blog.akismet.com/2014/04/23/theres-a-ninja-in-your-akismet/
-// for more on pervasive spam.
+// Clients may choose to treat the two types differently. The Akismet
+// Wordpress plugin, for example, puts normal spam into a queue for
+// review, while pervasive spam is discarded immediately.
+//
+// See https://blog.akismet.com/2014/04/23/theres-a-ninja-in-your-akismet/
+// for more on this.
 const (
-	StatusUnknown SpamStatus = iota // indicates an error
-	StatusHam
-	StatusProbableSpam
-	StatusDefiniteSpam
+	StatusUnknown Status = iota // indicates an error
+	StatusOK
+	StatusSpam
+	StatusBlatantSpam
 )
 
 // Checker provides spam checking and error reporting via the
@@ -138,7 +139,7 @@ func NewCheckerWithClient(key string, site string, client Client) *Checker {
 
 // Check takes comment data in the form of key-value pairs
 // and checks it for spam.
-func (ch *Checker) Check(values map[string]string) (SpamStatus, error) {
+func (ch *Checker) Check(values map[string]string) (Status, error) {
 
 	if !ch.verified {
 		if err := ch.verify(); err != nil {
@@ -156,11 +157,11 @@ func (ch *Checker) Check(values map[string]string) (SpamStatus, error) {
 
 	switch {
 	case result == respHam:
-		return StatusHam, nil
+		return StatusOK, nil
 	case result == respSpam && header.Get(hdrProTip) == respDiscard:
-		return StatusDefiniteSpam, nil
+		return StatusBlatantSpam, nil
 	case result == respSpam:
-		return StatusProbableSpam, nil
+		return StatusSpam, nil
 	default:
 		return StatusUnknown, newAPIError(APICheckComment, result, header)
 	}
