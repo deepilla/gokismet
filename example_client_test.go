@@ -4,57 +4,68 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/http/httputil"
 	"os"
 
 	"github.com/deepilla/gokismet"
 )
 
-// EXAMPLE: Logging HTTP requests and responses.
-
-// A ClientWriter is a wrapper around a gokismet Client that
-// itself satisfies the Client interface. Its Do method writes
-// HTTP requests and responses to the provided Writer.
-type ClientWriter struct {
+// A RequestWriterClient is a Client that wraps an existing
+// Client and writes outgoing requests to a Writer.
+type RequestWriterClient struct {
 	client gokismet.Client
 	writer io.Writer
 }
 
-// Do logs the incoming request, then calls the Do method of
-// the wrapped Client and logs the response.
-func (cw ClientWriter) Do(req *http.Request) (*http.Response, error) {
+// NewRequestWriterClient creates a RequestWriterClient.
+func NewRequestWriterClient(client gokismet.Client, writer io.Writer) *RequestWriterClient {
 
-	cw.writeRequest(req)
-	resp, err := cw.client.Do(req)
-	cw.writeResponse(resp)
-
-	return resp, err
-}
-
-func (cw ClientWriter) writeRequest(req *http.Request) {
-	// Write req to cw.writer...
-}
-
-func (cw ClientWriter) writeResponse(resp *http.Response) {
-	// Write resp to cw.writer...
-}
-
-func ExampleNewAPIWithClient() {
-
-	// Wrap the default HTTP client in a ClientWriter.
-	client := ClientWriter{
-		http.DefaultClient,
-		os.Stdout,
+	if client == nil {
+		client = http.DefaultClient
 	}
 
-	// Initialise a Checker that uses the ClientWriter.
-	checker := gokismet.NewCheckerWithClient("YOUR_API_KEY", "http://your.website.com", client)
+	if writer == nil {
+		writer = os.Stdout
+	}
+
+	return &RequestWriterClient{
+		client,
+		writer,
+	}
+}
+
+// Do writes the outgoing request to the specified Writer
+// before executing it.
+func (wc *RequestWriterClient) Do(req *http.Request) (*http.Response, error) {
+
+	buf, err := httputil.DumpRequestOut(req, true)
+	if err != nil {
+		return nil, err
+	}
+
+	_, err = wc.writer.Write(buf)
+	if err != nil {
+		return nil, err
+	}
+
+	return wc.client.Do(req)
+}
+
+func ExampleClient() {
 
 	comment := gokismet.Comment{
-	// Comment data goes here...
+	// comment data goes here
 	}
 
-	// API calls now log HTTP requests/responses to stdout.
-	status, err := checker.Check(comment.Values())
+	// Create a RequestWriterClient that uses the default
+	// HTTP client and writes to stdout.
+	client := NewRequestWriterClient(nil, nil)
+
+	// Create a Checker that uses the Client.
+	ch := gokismet.NewCheckerClient("YOUR-API-KEY", "http://example.com", client)
+
+	// The Checker's HTTP requests are now written to stdout.
+	status, err := ch.Check(comment.Values())
 
 	fmt.Println(status, err)
 }

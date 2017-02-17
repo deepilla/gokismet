@@ -1,6 +1,17 @@
+/*
+Package gokismet is a Go library for the Akismet anti-spam service.
+
+Use gokismet to:
+
+1. Check comments, forum posts, and other user-generated content for spam.
+
+2. Notify Akismet of false positives (legitimate content incorrectly flagged
+as spam) and false negatives (spam content that it failed to detect).
+*/
 package gokismet
 
 import (
+	"errors"
 	"io/ioutil"
 	"net/http"
 	"net/url"
@@ -8,103 +19,100 @@ import (
 	"time"
 )
 
-// UA is the user agent used by gokismet to identify itself
-// to the Akismet REST API. By default, all calls to Akismet
-// include this value in the HTTP request header. To override
-// it, use a custom Client (see WrapClient for an example).
-const UA = "Gokismet/3.0"
-
-// Akismet parameter keys.
+// Akismet query string parameters.
 const (
-	pkKey           = "key"
-	pkSite          = "blog"
-	pkUserIP        = "user_ip"
-	pkUserAgent     = "user_agent"
-	pkReferer       = "referrer"
-	pkPage          = "permalink"
-	pkPageTimestamp = "comment_post_modified_gmt"
-	pkType          = "comment_type"
-	pkAuthor        = "comment_author"
-	pkAuthorEmail   = "comment_author_email"
-	pkAuthorPage    = "comment_author_url"
-	pkContent       = "comment_content"
-	pkTimestamp     = "comment_date_gmt"
-	pkSiteLanguage  = "blog_lang"
-	pkSiteCharset   = "blog_charset"
+	paramKey           = "key"
+	paramSite          = "blog"
+	paramUserIP        = "user_ip"
+	paramUserAgent     = "user_agent"
+	paramReferer       = "referrer"
+	paramPage          = "permalink"
+	paramPageTimestamp = "comment_post_modified_gmt"
+	paramType          = "comment_type"
+	paramAuthor        = "comment_author"
+	paramAuthorEmail   = "comment_author_email"
+	paramAuthorSite    = "comment_author_url"
+	paramContent       = "comment_content"
+	paramTimestamp     = "comment_date_gmt"
+	paramSiteLanguage  = "blog_lang"
+	paramSiteCharset   = "blog_charset"
 )
 
-// Elements of an Akismet API Request.
-// TODO: The API version is likely to change. Ideally we'd
-// be able to update it without changing any code.
+// Akismet API calls.
 const (
-	reqMethod       = "POST"
-	reqScheme       = "https"
-	reqHost         = "rest.akismet.com"
-	reqAPIVersion   = "1.1"
-	reqVerifyKey    = "verify-key"
-	reqCheckComment = "comment-check"
-	reqSubmitHam    = "submit-ham"
-	reqSubmitSpam   = "submit-spam"
-	reqContentType  = "application/x-www-form-urlencoded"
+	methodVerify     = "verify-key"
+	methodCheck      = "comment-check"
+	methodReportHam  = "submit-ham"
+	methodReportSpam = "submit-spam"
 )
 
-// Akismet request headers.
+// Expected Akismet return values. Any other values
+// generate a ValError (or a KeyError).
 const (
-	hdrUserAgent   = "User-Agent"
-	hdrContentType = "Content-Type"
+	responseVerified = "valid"
+	responseHam      = "false"
+	responseSpam     = "true"
+	responseReported = "Thanks for making the web a better place."
 )
 
-// Akismet response headers.
+// Useful Akismet response headers.
 const (
-	hdrHelp   = "X-Akismet-Debug-Help"
-	hdrProTip = "X-Akismet-Pro-Tip"
+	headerDebugHelp = "X-Akismet-Debug-Help"
+	headerProTip    = "X-Akismet-Pro-Tip"
 )
 
-// Valid Akismet return values. All other values are
-// considered errors.
-const (
-	respVerified  = "valid"
-	respHam       = "false"
-	respSpam      = "true"
-	respSubmitted = "Thanks for making the web a better place."
-	respDiscard   = "discard"
-)
+// Akismet's "pervasive" spam indicator, returned in the
+// X-Akismet-Pro-Tip header.
+const proTipDiscard = "discard"
 
-// An Action indicates the type of an Akismet call.
-type Action uint32
+// UserAgent identifies gokismet to the Akismet API. By default,
+// all API calls include this value in the HTTP request header.
+// Use a custom Client to override this behaviour (see ClientFunc
+// for an example).
+const UserAgent = "Gokismet/3.0"
 
-// Types of Akismet call. If gokismet encounters a problem,
-// the returned Error will contain the Action along with the
-// response from Akismet.
-const (
-	Authenticate Action = iota
-	Check
-	SubmitHam
-	SubmitSpam
-)
+// A SpamStatus is the result of a spam check.
+type SpamStatus uint32
 
-// A Status is the result of a spam check.
-type Status uint32
-
-// Note the two statuses for spam: StatusSpam and StatusBlatantSpam.
-// These correspond to the two types of spam defined by Akismet:
-// normal spam and "pervasive" spam.
-//
-// Clients may choose to treat the two types differently. The Akismet
-// Wordpress plugin, for example, puts normal spam into a queue for
-// review, while pervasive spam is discarded immediately.
-//
 // See https://blog.akismet.com/2014/04/23/theres-a-ninja-in-your-akismet/
-// for more on this.
+// for more on the two types of spam in Akismet.
 const (
-	StatusUnknown Status = iota // indicates an error
-	StatusOK
-	StatusSpam
-	StatusBlatantSpam
+	// An error occurred during the spam check.
+	StatusUnknown SpamStatus = iota
+
+	// Akismet thinks this is legitimate content.
+	StatusHam
+
+	// Akismet thinks this is spam. But ham can occasionally
+	// slip through the cracks. Consider reviewing the content
+	// before permanently deleting it.
+	StatusProbableSpam
+
+	// Akismet is 100% certain this is spam. It's safe to
+	// delete this content without reviewing it.
+	StatusDefiniteSpam
 )
 
-// Checker provides spam checking and error reporting via the
-// Akismet REST API.
+// A Client executes an HTTP request and returns an HTTP response.
+// Its interface is satisfied by the standard library's http.Client.
+// Provide your own implementation to intercept gokismet's requests
+// and responses.
+type Client interface {
+	Do(req *http.Request) (*http.Response, error)
+}
+
+// A ClientFunc converts a standalone function into a Client.
+// If f is a function with a matching signature, ClientFunc(f)
+// is a Client that calls f as its Do method.
+type ClientFunc func(req *http.Request) (*http.Response, error)
+
+// Do calls a ClientFunc's underlying function.
+func (f ClientFunc) Do(req *http.Request) (*http.Response, error) {
+	return f(req)
+}
+
+// Checker provides spam checking and error reporting via
+// the Akismet API.
 type Checker struct {
 	key      string
 	site     string
@@ -112,37 +120,35 @@ type Checker struct {
 	verified bool
 }
 
-// NewChecker returns a Checker that uses Go's default HTTP
-// client for HTTP requests.
+// NewChecker returns a Checker that uses the default HTTP
+// client. The API key and website are verified with Akismet
+// on the first call to Check, ReportHam or ReportSpam.
 func NewChecker(key string, site string) *Checker {
-	return NewCheckerWithClient(key, site, nil)
+	return NewCheckerClient(key, site, nil)
 }
 
-// NewCheckerWithClient returns a Checker that uses the provided
-// Client for HTTP requests. If the provided Client is nil, Go's
-// default HTTP client is used instead (as in NewChecker). Use a
-// custom client to intercept HTTP requests and responses (e.g.
-// to set custom request headers or apply middleware).
-func NewCheckerWithClient(key string, site string, client Client) *Checker {
-
-	var nonNilClient Client
+// NewCheckerClient returns a Checker that uses the provided
+// Client for HTTP requests. If the Client is nil, the default
+// HTTP client is used instead. The API key and website are
+// verified with Akismet on the first call to Check, ReportHam
+// or ReportSpam.
+func NewCheckerClient(key string, site string, client Client) *Checker {
 
 	if client == nil {
-		nonNilClient = http.DefaultClient
-	} else {
-		nonNilClient = client
+		client = http.DefaultClient
 	}
 
 	return &Checker{
 		key:    key,
 		site:   site,
-		client: nonNilClient,
+		client: client,
 	}
 }
 
-// Check takes comment data in the form of key-value pairs
-// and checks it for spam.
-func (ch *Checker) Check(values map[string]string) (Status, error) {
+// Check takes content in the form of key-value pairs and
+// checks it for spam. If an error occurs the returned spam
+// status is StatusUnknown.
+func (ch *Checker) Check(values map[string]string) (SpamStatus, error) {
 
 	if !ch.verified {
 		if err := ch.verify(); err != nil {
@@ -151,43 +157,45 @@ func (ch *Checker) Check(values map[string]string) (Status, error) {
 		ch.verified = true
 	}
 
-	body, header, err := ch.execute(Check, values)
+	url := buildURL(methodCheck, ch.key)
+
+	body, header, err := ch.call(url, values)
 	if err != nil {
 		return StatusUnknown, err
 	}
 
-	result := string(body)
-
-	switch {
-	case result == respHam:
-		return StatusOK, nil
-	case result == respSpam && header.Get(hdrProTip) == respDiscard:
-		return StatusBlatantSpam, nil
-	case result == respSpam:
-		return StatusSpam, nil
+	switch string(body) {
+	case responseHam:
+		return StatusHam, nil
+	case responseSpam:
+		if header.Get(headerProTip) == proTipDiscard {
+			return StatusDefiniteSpam, nil
+		}
+		return StatusProbableSpam, nil
 	default:
-		return StatusUnknown, newError(Check, result, header)
+		return StatusUnknown, newValError(methodCheck, string(body), header)
 	}
 }
 
-// SubmitHam notifies Akismet of legitimate comments incorrectly
-// flagged as spam by Check. Like Check, it takes comment data
-// in the form of key-value pairs. For best results, provide as
-// many of the original values as possible.
-func (ch *Checker) SubmitHam(values map[string]string) error {
-	return ch.submit(SubmitHam, values)
+// ReportHam notifies Akismet of legitimate content incorrectly
+// flagged as spam by the Check method. Like Check, it takes
+// content in the form of key-value pairs. For best results,
+// provide as many of the original values as possible.
+func (ch *Checker) ReportHam(values map[string]string) error {
+	return ch.report(methodReportHam, values)
 }
 
-// SubmitSpam notifies Akismet of spam that Check failed to
-// detect. Like Check, it takes comment data in the form of
-// key-value pairs. For best results, provide as many of the
+// ReportSpam notifies Akismet of spam that the Check method
+// failed to detect. Like Check, it takes content in the form
+// of key-value pairs. For best results, provide as many of the
 // original values as possible.
-func (ch *Checker) SubmitSpam(values map[string]string) error {
-	return ch.submit(SubmitSpam, values)
+func (ch *Checker) ReportSpam(values map[string]string) error {
+	return ch.report(methodReportSpam, values)
 }
 
-// submit implements the SubmitHam and SubmitSpam methods.
-func (ch *Checker) submit(op Action, values map[string]string) error {
+// report handles the heavy lifting for the ReportHam and
+// ReportSpam methods.
+func (ch *Checker) report(method string, values map[string]string) error {
 
 	if !ch.verified {
 		if err := ch.verify(); err != nil {
@@ -196,52 +204,54 @@ func (ch *Checker) submit(op Action, values map[string]string) error {
 		ch.verified = true
 	}
 
-	body, header, err := ch.execute(op, values)
+	url := buildURL(method, ch.key)
+
+	body, header, err := ch.call(url, values)
 	if err != nil {
 		return err
 	}
 
-	if string(body) != respSubmitted {
-		return newError(op, string(body), header)
+	if string(body) != responseReported {
+		return newValError(method, string(body), header)
 	}
 
 	return nil
 }
 
-// verify authorises a Checker's API key and website with
-// Akismet. All public Checker methods should call verify
-// first.
+// verify authenticates the Akismet API key and website
+// passed to NewChecker or NewCheckerClient.
 func (ch *Checker) verify() error {
 
+	// The verify-key endpoint is not qualified with the API
+	// key so pass a blank string to buildURL instead.
+	url := buildURL(methodVerify, "")
+
 	values := map[string]string{
-		pkKey:  ch.key,
-		pkSite: ch.site,
+		paramKey:  ch.key,
+		paramSite: ch.site,
 	}
 
-	body, header, err := ch.execute(Authenticate, values)
+	body, header, err := ch.call(url, values)
 	if err != nil {
 		return err
 	}
 
-	if string(body) != respVerified {
-		return newAuthError(ch.key, ch.site, string(body), header)
+	if string(body) != responseVerified {
+		return newKeyError(ch.key, ch.site, string(body), header)
 	}
 
 	return nil
 }
 
-// execute calls the provided Akismet method with the
-// provided parameters and returns the HTTP Response body
-// and headers.
-func (ch *Checker) execute(op Action, params map[string]string) ([]byte, http.Header, error) {
+// call makes a request to an Akismet endpoint with the given
+// parameters and returns the response body and headers.
+func (ch *Checker) call(url string, params map[string]string) ([]byte, http.Header, error) {
 
 	defaultParams := map[string]string{
-		pkSite: ch.site,
+		paramSite: ch.site,
 	}
 
-	endpoint := endpoint(op, ch.key)
-
-	req, err := request(endpoint, mergeMaps(defaultParams, params))
+	req, err := newRequest(url, mergeStringMaps(defaultParams, params))
 	if err != nil {
 		return nil, nil, err
 	}
@@ -253,75 +263,51 @@ func (ch *Checker) execute(op Action, params map[string]string) ([]byte, http.He
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, nil, newError(op, "Status "+resp.Status, resp.Header)
+		return nil, nil, errors.New("got " + resp.Status + " from " + url)
 	}
 
 	body, err := ioutil.ReadAll(resp.Body)
-	if err != nil {
-		return nil, nil, err
-	}
 
-	return body, resp.Header, nil
+	return body, resp.Header, err
 }
 
-// endpoint returns the REST endpoint URL for the given
-// Akismet API call and key.
-func endpoint(op Action, key string) string {
+// buildURL returns the Akismet endpoint URL for the given
+// API method. If a non-empty API key is provided, the
+// hostname will be qualified with that key.
+func buildURL(method string, key string) string {
 
-	var command string
-	var qualified bool
-
-	switch op {
-	case Authenticate:
-		command = reqVerifyKey
-	case Check:
-		command = reqCheckComment
-		qualified = true
-	case SubmitHam:
-		command = reqSubmitHam
-		qualified = true
-	case SubmitSpam:
-		command = reqSubmitSpam
-		qualified = true
-	default:
-		// If we reach this point there's a bug in our code.
-		// Might as well fail fast.
-		panic("url: Unknown API Call")
-	}
-
-	host := reqHost
-	if qualified {
+	host := "rest.akismet.com"
+	if key != "" {
 		host = key + "." + host
 	}
 
 	u := url.URL{
-		Scheme: reqScheme,
+		Scheme: "https",
 		Host:   host,
-		Path:   reqAPIVersion + "/" + command,
+		Path:   "1.1/" + method,
 	}
 
 	return u.String()
 }
 
-// request creates an HTTP Request from the provided endpoint
-// URL and query parameters.
-func request(endpoint string, params map[string]string) (*http.Request, error) {
+// newRequest creates an HTTP Request from the provided
+// endpoint URL and query parameters.
+func newRequest(url string, params map[string]string) (*http.Request, error) {
 
-	req, err := http.NewRequest(reqMethod, endpoint, strings.NewReader(encodeParams(params)))
+	req, err := http.NewRequest("POST", url, strings.NewReader(encodeParams(params)))
 	if err != nil {
 		return nil, err
 	}
 
 	// Default HTTP headers.
-	req.Header.Set(hdrContentType, reqContentType)
-	req.Header.Set(hdrUserAgent, UA)
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.Header.Set("User-Agent", UserAgent)
 
 	return req, nil
 }
 
-// encodeParams URL-encodes the given key value pairs and
-// concatenates them into a query string suitable for
-// Akismet requests.
+// encodeParams converts key-value pairs into a URL-encoded
+// query string, ready to be passed to Akismet.
 func encodeParams(params map[string]string) string {
 
 	values := url.Values{}
@@ -335,10 +321,10 @@ func encodeParams(params map[string]string) string {
 	return values.Encode()
 }
 
-// mergeMaps consolidates multiple string to string maps
-// into a single map. Values from later maps take priority
-// over those from earlier maps.
-func mergeMaps(maps ...map[string]string) map[string]string {
+// mergeStringMaps creates a string to string map containing
+// entries from the series of maps provided. Later values
+// override earlier ones.
+func mergeStringMaps(maps ...map[string]string) map[string]string {
 
 	merge := func(dst, src map[string]string) map[string]string {
 		for k, v := range src {
@@ -359,130 +345,85 @@ func mergeMaps(maps ...map[string]string) map[string]string {
 	return values
 }
 
-// An Error represents an unexpected response from the
-// Akismet REST API.
-type Error struct {
-	// Type of API call.
-	Action Action
-	// Value returned by Akismet.
+// A ValError is returned by the Checker methods if Akismet
+// returns an unexpected response. Usually this indicates a
+// problem with the API call such as a required field not
+// being set.
+type ValError struct {
+	// The Akismet method being called.
+	Method string
+	// The return value from Akismet.
 	Response string
-	// Additional error info from Akismet (may be empty).
+	// Any additional error info from Akismet (may be empty).
 	Hint string
 }
 
-func newError(op Action, response string, header http.Header) *Error {
-	return &Error{
-		Action:   op,
+func newValError(method string, response string, header http.Header) *ValError {
+	return &ValError{
+		Method:   method,
 		Response: response,
-		Hint:     header.Get(hdrHelp),
+		Hint:     header.Get(headerDebugHelp),
 	}
 }
 
-func (e Error) Error() string {
+func (e ValError) Error() string {
 
-	var s string
+	s := e.Method + " returned "
 
-	switch e.Action {
-	case Check:
-		s = "Check Comment"
-	case SubmitHam:
-		s = "Submit Ham"
-	case SubmitSpam:
-		s = "Submit Spam"
-	default:
-		s = "Akismet"
-	}
-
-	s += " returned "
-
-	if e.Response == "" {
+	if strings.TrimSpace(e.Response) == "" {
 		s += "an empty string"
 	} else {
 		s += "\"" + e.Response + "\""
 	}
 
-	if e.Hint != "" {
-		s += " (" + e.Hint + ")"
+	hint := e.Hint
+	if hint == "" {
+		switch e.Method {
+		case methodCheck:
+			hint = "expected true or false"
+		case methodReportHam, methodReportSpam:
+			hint = "expected thank you message"
+		}
+	}
+
+	if hint != "" {
+		s += " (" + hint + ")"
 	}
 
 	return s
 }
 
-// An AuthError indicates that Akismet was unable to verify
-// the provided API key.
-type AuthError struct {
-	// API key being verified.
+// A KeyError is returned by the Checker methods if Akismet
+// fails to verify an API key.
+type KeyError struct {
+	// The API key being verified.
 	Key string
 	// Website associated with the API key.
 	Site string
-	// Value returned by Akismet.
-	Response string
-	// Additional error info from Akismet (may be empty).
-	Hint string
+	// Details of the Akismet return value.
+	*ValError
 }
 
-func newAuthError(key string, site string, response string, header http.Header) *AuthError {
-	return &AuthError{
+func newKeyError(key string, site string, response string, header http.Header) *KeyError {
+	return &KeyError{
 		Key:      key,
 		Site:     site,
-		Response: response,
-		Hint:     header.Get(hdrHelp),
+		ValError: newValError(methodVerify, response, header),
 	}
 }
 
-func (e AuthError) Error() string {
-
-	s := "Akismet failed to verify key \"" + e.Key + "\" for site \"" + e.Site + "\""
-
-	if e.Hint != "" {
-		s += " (" + e.Hint + ")"
-	}
-
-	return s
+func (e KeyError) Error() string {
+	return "key " + e.Key + " not verified: " + e.ValError.Error()
 }
 
-// A Client executes an HTTP request and returns an HTTP
-// response. Its interface is satisfied by http.Client.
-// Provide your own implementation to intercept gokismet's
-// HTTP requests and responses.
-type Client interface {
-	Do(req *http.Request) (*http.Response, error)
-}
-
-// clientWithHeaders decorates a Client with custom request
-// headers.
-type clientWithHeaders struct {
-	client  Client
-	headers map[string]string
-}
-
-// WrapClient takes a Client and a map of key-value pairs and
-// returns a new Client that injects those values into all
-// HTTP request headers.
-func WrapClient(client Client, headers map[string]string) Client {
-	return &clientWithHeaders{
-		client:  client,
-		headers: headers,
-	}
-}
-
-// Do injects this object's key-value pairs into the incoming
-// request header and delegates to the Do method of the wrapped
-// Client.
-func (c *clientWithHeaders) Do(req *http.Request) (*http.Response, error) {
-
-	for k, v := range c.headers {
-		req.Header.Set(k, v)
-	}
-
-	return c.client.Do(req)
-}
-
-// A Comment represents a blog comment, forum post, or other
-// item of (potentially spammy) user-generated content. When
-// creating instances of this type, aim to set as many fields
-// as possible. The more information Akismet has to work with,
-// the more accurate its spam detection.
+// A Comment represents a chunk of content to be checked
+// for spam, such as a blog comment or forum post.
+//
+// According to the Akismet docs, the only required fields
+// are Site, UserIP and UserAgent. But it's important to
+// set as many fields as possible. The more data Akismet
+// has to work with, the faster and more accurate its spam
+// detection.
 type Comment struct {
 
 	// Homepage URL of the website being commented on.
@@ -511,9 +452,9 @@ type Comment struct {
 	AuthorEmail string
 
 	// Website of the commenter.
-	AuthorPage string
+	AuthorSite string
 
-	// Comment type, e.g. "comment", "forum-post".
+	// Content type, e.g. "comment", "forum-post".
 	// See https://blog.akismet.com/2012/06/19/pro-tip-tell-us-your-comment_type/
 	// for more examples.
 	Type string
@@ -534,9 +475,8 @@ type Comment struct {
 	SiteCharset string
 }
 
-// Values returns comment data as a map of key-value pairs
-// which can then be passed to the API methods CheckComment,
-// SubmitHam and SubmitSpam.
+// Values returns a Comment's data as a map of key-value pairs
+// (for use with the Checker methods).
 func (c *Comment) Values() map[string]string {
 
 	insert := func(dst map[string]string, key, value string) map[string]string {
@@ -549,24 +489,24 @@ func (c *Comment) Values() map[string]string {
 		return dst
 	}
 
-	var values map[string]string
+	var m map[string]string
 
-	values = insert(values, pkUserIP, c.UserIP)
-	values = insert(values, pkUserAgent, c.UserAgent)
-	values = insert(values, pkReferer, c.Referer)
-	values = insert(values, pkPage, c.Page)
-	values = insert(values, pkPageTimestamp, formatTime(c.PageTimestamp))
-	values = insert(values, pkType, c.Type)
-	values = insert(values, pkAuthor, c.Author)
-	values = insert(values, pkAuthorEmail, c.AuthorEmail)
-	values = insert(values, pkAuthorPage, c.AuthorPage)
-	values = insert(values, pkContent, c.Content)
-	values = insert(values, pkTimestamp, formatTime(c.Timestamp))
-	values = insert(values, pkSite, c.Site)
-	values = insert(values, pkSiteCharset, c.SiteCharset)
-	values = insert(values, pkSiteLanguage, c.SiteLanguage)
+	m = insert(m, paramUserIP, c.UserIP)
+	m = insert(m, paramUserAgent, c.UserAgent)
+	m = insert(m, paramReferer, c.Referer)
+	m = insert(m, paramPage, c.Page)
+	m = insert(m, paramPageTimestamp, formatTime(c.PageTimestamp))
+	m = insert(m, paramType, c.Type)
+	m = insert(m, paramAuthor, c.Author)
+	m = insert(m, paramAuthorEmail, c.AuthorEmail)
+	m = insert(m, paramAuthorSite, c.AuthorSite)
+	m = insert(m, paramContent, c.Content)
+	m = insert(m, paramTimestamp, formatTime(c.Timestamp))
+	m = insert(m, paramSite, c.Site)
+	m = insert(m, paramSiteCharset, c.SiteCharset)
+	m = insert(m, paramSiteLanguage, c.SiteLanguage)
 
-	return values
+	return m
 }
 
 func formatTime(t time.Time) string {
@@ -574,7 +514,8 @@ func formatTime(t time.Time) string {
 	if t.IsZero() {
 		return ""
 	}
-	// Akismet requires UTC time in ISO 8601 format
-	// e.g. "2016-04-18T09:30:59Z".
+
+	// Akismet requires UTC time in ISO 8601 format, e.g.
+	// "2016-04-18T09:30:59Z".
 	return t.UTC().Format(time.RFC3339)
 }

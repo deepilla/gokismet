@@ -1,6 +1,8 @@
 package gokismet_test
 
 import (
+	"errors"
+	"flag"
 	"fmt"
 	"io/ioutil"
 	"net/http"
@@ -13,26 +15,38 @@ import (
 	"github.com/deepilla/gokismet"
 )
 
+// To run tests against the live Akismet server, specify an
+// API key and website on the command line.
+// Note: We're relying on go test's flag parsing to set
+// these values. Seems to work...
+var flags = struct {
+	APIKey *string
+	Site   *string
+}{
+	flag.String("akismet.key", "", "your Akismet API Key"),
+	flag.String("akismet.site", "", "the website associated with your Akismet API Key"),
+}
+
 const (
-	TESTAPIKEY = "123456789abc"
-	TESTSITE   = "http://www.example.com"
+	TestAPIKey = "123456789abc"
+	TestSite   = "http://example.com"
 )
 
 var UTCMinus5 = time.FixedZone("UTCMinus5", -5*60*60)
 
 var (
-	fnSubmitHam    = (*gokismet.Checker).SubmitHam
-	fnSubmitSpam   = (*gokismet.Checker).SubmitSpam
-	fnCheckComment = (*gokismet.Checker).Check
+	fnCheck      = (*gokismet.Checker).Check
+	fnReportHam  = (*gokismet.Checker).ReportHam
+	fnReportSpam = (*gokismet.Checker).ReportSpam
 )
 
 type (
 	ErrorFunc       func(*gokismet.Checker, map[string]string) error
-	StatusErrorFunc func(*gokismet.Checker, map[string]string) (gokismet.Status, error)
+	StatusErrorFunc func(*gokismet.Checker, map[string]string) (gokismet.SpamStatus, error)
 )
 
 func toStatusErrorFunc(fn ErrorFunc) StatusErrorFunc {
-	return func(checker *gokismet.Checker, values map[string]string) (gokismet.Status, error) {
+	return func(checker *gokismet.Checker, values map[string]string) (gokismet.SpamStatus, error) {
 		return gokismet.StatusUnknown, fn(checker, values)
 	}
 }
@@ -44,8 +58,8 @@ func toErrorFunc(fn StatusErrorFunc) ErrorFunc {
 	}
 }
 
-// RequestInfo contains the pertinent parts of an
-// HTTP Request.
+// A RequestInfo contains the pertinent parts of an HTTP Request
+// (i.e. any values that gokismet sets when making calls to Akismet).
 type RequestInfo struct {
 	Method      string
 	URL         string
@@ -53,7 +67,10 @@ type RequestInfo struct {
 	Body        string
 }
 
-func NewRequestInfo(req *http.Request) *RequestInfo {
+// NewRequestInfo creates a RequestInfo from an HTTP Request.
+// Note: This function consumes the Request body. Watch what
+// you do with the Request afterwards.
+func NewRequestInfo(req *http.Request) (*RequestInfo, error) {
 
 	info := &RequestInfo{
 		Method: req.Method,
@@ -71,33 +88,28 @@ func NewRequestInfo(req *http.Request) *RequestInfo {
 		defer req.Body.Close()
 		body, err := ioutil.ReadAll(req.Body)
 		if err != nil {
-			// Swallow this error but write it to the
-			// RequestInfo body so that we can see what
-			// happened when the tests fail.
-			info.Body = "ReadAll Error: " + err.Error()
-		} else {
-			info.Body = string(body)
+			return nil, err
 		}
+		info.Body = string(body)
 	}
 
-	return info
+	return info, nil
 }
 
-// ResponseInfo contains the pertinent parts of an
-// HTTP Response.
+// A ResponseInfo contains the pertinent parts of an HTTP Response
+// (i.e. any values in the Akismet response that gokismet uses).
 type ResponseInfo struct {
-	Status      int
+	StatusCode  int
 	HeaderItems map[string]string
 	Body        string
 }
 
-// MakeResponse creates and returns a barebones HTTP
-// Response object.
-func (info *ResponseInfo) MakeResponse() *http.Response {
+// NewResponse creates a barebones HTTP Response from a ResponseInfo.
+func NewResponse(info *ResponseInfo) *http.Response {
 
 	resp := &http.Response{
-		StatusCode: info.Status,
-		Status:     fmt.Sprintf("%d %s", info.Status, http.StatusText(info.Status)),
+		StatusCode: info.StatusCode,
+		Status:     fmt.Sprintf("%d %s", info.StatusCode, http.StatusText(info.StatusCode)),
 		Body:       ioutil.NopCloser(strings.NewReader(info.Body)),
 	}
 
@@ -111,78 +123,96 @@ func (info *ResponseInfo) MakeResponse() *http.Response {
 	return resp
 }
 
-// TestClient satisfies the gokismet Client interface.
-// Its Do method captures incoming HTTP Requests and
-// returns HTTP Responses defined by the caller. There
-// are no actual HTTP requests.
-type TestClient struct {
-	// Incoming requests.
+// A RequestStore is a mock Client that captures the details
+// of incoming requests.
+type RequestStore struct {
 	Requests []*RequestInfo
-	// Predefined responses keyed by command, e.g.
-	// "verify-key". Set when the TestClient is created.
+}
+
+// Do stores the details of the incoming request and returns
+// a nil Response.
+func (rs *RequestStore) Do(req *http.Request) (*http.Response, error) {
+
+	info, err := NewRequestInfo(req)
+	if err != nil {
+		return nil, err
+	}
+
+	rs.Requests = append(rs.Requests, info)
+
+	return nil, errors.New("RequestStore always returns a Nil Response")
+}
+
+// A Responder is a mock Client that responds to incoming requests
+// according to user-defined responses.
+type Responder struct {
 	Responses map[string]*ResponseInfo
 }
 
-// NewVerifyingTestClient returns a TestClient that
-// verifies API keys.
-func NewVerifyingTestClient() *TestClient {
-	return &TestClient{
-		Responses: map[string]*ResponseInfo{
-			"verify-key": {
-				Body:   "valid",
-				Status: http.StatusOK,
-			},
+// Do returns the user-defined response for the incoming request.
+// If no response exists, Do returns an error.
+func (r *Responder) Do(req *http.Request) (*http.Response, error) {
+
+	// Akismet URL format is https://rest.akismet.com/1.1/verify-key.
+	// The last part of the URL, as returned by path.Base, is the
+	// name of the API call.
+	call := path.Base(req.URL.Path)
+
+	info := r.Responses[call]
+	if info == nil {
+		return nil, fmt.Errorf("No response for %q", call)
+	}
+
+	return NewResponse(info), nil
+}
+
+// AddResponses adds another Responder's user-defined responses
+// to this Responder.
+func (r *Responder) AddResponses(in *Responder) {
+	for k, v := range in.Responses {
+		if r.Responses == nil {
+			r.Responses = make(map[string]*ResponseInfo)
+		}
+		r.Responses[k] = v
+	}
+}
+
+// verifyingResponder is a Responder that verifies API keys.
+var verifyingResponder = &Responder{
+	map[string]*ResponseInfo{
+		"verify-key": {
+			Body:       "valid",
+			StatusCode: http.StatusOK,
 		},
+	},
+}
+
+// A clientAdapter is a function that takes a Client and
+// returns a Client, usually the original Client supplemented
+// with additional functionality.
+type clientAdapter func(gokismet.Client) gokismet.Client
+
+// adaptClient applies a series of clientAdapters to a Client.
+func adaptClient(client gokismet.Client, adapters ...clientAdapter) gokismet.Client {
+	for _, adapter := range adapters {
+		client = adapter(client)
+	}
+	return client
+}
+
+// withResponder returns a clientAdapter that calls the Do
+// method of the original Client and then forwards the request
+// to a Responder to generate the Response.
+func withResponder(responder *Responder) clientAdapter {
+	return func(client gokismet.Client) gokismet.Client {
+		return gokismet.ClientFunc(func(req *http.Request) (*http.Response, error) {
+			client.Do(req)
+			return responder.Do(req)
+		})
 	}
 }
 
-// Do adds the request info to the array and returns
-// the predefined response for this request type.
-func (c *TestClient) Do(req *http.Request) (*http.Response, error) {
-
-	info := NewRequestInfo(req)
-	c.Requests = append(c.Requests, info)
-
-	return c.respond(info.URL)
-}
-
-// ResetRequests clears any existing HTTP request info.
-func (c *TestClient) ResetRequests() {
-	c.Requests = c.Requests[:0]
-}
-
-// respond extracts the command from an Akismet REST URL
-// and returns the corresponding HTTP response (as defined
-// by the object creator).
-func (c *TestClient) respond(curl string) (*http.Response, error) {
-
-	// URL format is https://rest.akismet.com/1.1/verify-key.
-	// The last part of the URL, as returned by the Base method,
-	// is the actual command.
-	cmd := path.Base(curl)
-
-	if info := c.Responses[cmd]; info != nil {
-		return info.MakeResponse(), nil
-	}
-
-	return nil, &TestClientError{
-		Command: cmd,
-	}
-}
-
-// A TestClientError is returned by TestClient's Do method
-// when the current HTTP request does not have a predefined
-// response.
-type TestClientError struct {
-	Command string
-}
-
-func (e *TestClientError) Error() string {
-	return "Unexpected command " + e.Command
-}
-
-// A FieldSetter uses reflection to set the fields of a
-// struct.
+// A FieldSetter uses reflection to set the fields of a struct.
 type FieldSetter struct {
 	val reflect.Value
 }
@@ -194,7 +224,7 @@ func NewFieldSetter(val interface{}) *FieldSetter {
 }
 
 // Set sets the field with the given name to the given value.
-func (c *FieldSetter) Set(name string, val interface{}) error {
+func (c *FieldSetter) Set(name string, value interface{}) error {
 
 	// Panics if val is not a struct. Returns a nil Value
 	// if the field does not exist.
@@ -206,7 +236,7 @@ func (c *FieldSetter) Set(name string, val interface{}) error {
 	case !v.CanSet():
 		return fmt.Errorf("Field %s is not settable", name)
 	default:
-		v.Set(reflect.ValueOf(val))
+		v.Set(reflect.ValueOf(value))
 		return nil
 	}
 }
@@ -216,42 +246,879 @@ func (c *FieldSetter) NumFields() int {
 	return c.val.NumField()
 }
 
-// actionToString returns a string representation of an
-// Action enum value.
-func actionToString(op gokismet.Action) string {
-	switch op {
-	case gokismet.Authenticate:
-		return "Authenticate"
-	case gokismet.Check:
-		return "Check"
-	case gokismet.SubmitHam:
-		return "SubmitHam"
-	case gokismet.SubmitSpam:
-		return "SubmitSpam"
-	default:
-		return "!Invalid Action!"
+// RequestTests defines test cases for the TestRequest and
+// TestCommentValues functions.
+var RequestTests = []struct {
+	// Name of a field in the Comment struct.
+	Field string
+	// Value to be assigned to the field.
+	Value interface{}
+	// Expected return value of Comment.Values given
+	// a Comment with its fields set as above.
+	Values map[string]string
+	// Expected query string generated by the Checker
+	// methods given the key-value pairs above.
+	QueryString string
+}{
+	{
+		// NOTE: Query strings should include the verified website
+		// by default.
+		QueryString: "blog=http%3A%2F%2Fexample.com",
+	},
+	{
+		Field: "UserIP",
+		Value: "127.0.0.1",
+		Values: map[string]string{
+			"user_ip": "127.0.0.1",
+		},
+		QueryString: "blog=http%3A%2F%2Fexample.com&user_ip=127.0.0.1",
+	},
+	{
+		Field: "UserAgent",
+		Value: "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/41.0.2227.0 Safari/537.36",
+		Values: map[string]string{
+			"user_ip":    "127.0.0.1",
+			"user_agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/41.0.2227.0 Safari/537.36",
+		},
+		QueryString: "blog=http%3A%2F%2Fexample.com&user_agent=Mozilla%2F5.0+%28X11%3B+Linux+x86_64%29+AppleWebKit%2F537.36+%28KHTML%2C+like+Gecko%29+Chrome%2F41.0.2227.0+Safari%2F537.36&user_ip=127.0.0.1",
+	},
+	{
+		Field: "Referer",
+		Value: "http://www.google.com",
+		Values: map[string]string{
+			"user_ip":    "127.0.0.1",
+			"user_agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/41.0.2227.0 Safari/537.36",
+			"referrer":   "http://www.google.com",
+		},
+		QueryString: "blog=http%3A%2F%2Fexample.com&referrer=http%3A%2F%2Fwww.google.com&user_agent=Mozilla%2F5.0+%28X11%3B+Linux+x86_64%29+AppleWebKit%2F537.36+%28KHTML%2C+like+Gecko%29+Chrome%2F41.0.2227.0+Safari%2F537.36&user_ip=127.0.0.1",
+	},
+	{
+		Field: "Page",
+		Value: "http://example.com/posts/this-is-a-post/",
+		Values: map[string]string{
+			"user_ip":    "127.0.0.1",
+			"user_agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/41.0.2227.0 Safari/537.36",
+			"referrer":   "http://www.google.com",
+			"permalink":  "http://example.com/posts/this-is-a-post/",
+		},
+		QueryString: "blog=http%3A%2F%2Fexample.com&permalink=http%3A%2F%2Fexample.com%2Fposts%2Fthis-is-a-post%2F&referrer=http%3A%2F%2Fwww.google.com&user_agent=Mozilla%2F5.0+%28X11%3B+Linux+x86_64%29+AppleWebKit%2F537.36+%28KHTML%2C+like+Gecko%29+Chrome%2F41.0.2227.0+Safari%2F537.36&user_ip=127.0.0.1",
+	},
+	{
+		Field: "PageTimestamp",
+		// NOTE: Timestamps should be converted to UTC time.
+		Value: time.Date(2016, time.March, 31, 18, 27, 59, 0, UTCMinus5),
+		Values: map[string]string{
+			"user_ip":                   "127.0.0.1",
+			"user_agent":                "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/41.0.2227.0 Safari/537.36",
+			"referrer":                  "http://www.google.com",
+			"permalink":                 "http://example.com/posts/this-is-a-post/",
+			"comment_post_modified_gmt": "2016-03-31T23:27:59Z",
+		},
+		QueryString: "blog=http%3A%2F%2Fexample.com&comment_post_modified_gmt=2016-03-31T23%3A27%3A59Z&permalink=http%3A%2F%2Fexample.com%2Fposts%2Fthis-is-a-post%2F&referrer=http%3A%2F%2Fwww.google.com&user_agent=Mozilla%2F5.0+%28X11%3B+Linux+x86_64%29+AppleWebKit%2F537.36+%28KHTML%2C+like+Gecko%29+Chrome%2F41.0.2227.0+Safari%2F537.36&user_ip=127.0.0.1",
+	},
+	{
+		Field: "Type",
+		Value: "comment",
+		Values: map[string]string{
+			"user_ip":                   "127.0.0.1",
+			"user_agent":                "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/41.0.2227.0 Safari/537.36",
+			"referrer":                  "http://www.google.com",
+			"permalink":                 "http://example.com/posts/this-is-a-post/",
+			"comment_post_modified_gmt": "2016-03-31T23:27:59Z",
+			"comment_type":              "comment",
+		},
+		QueryString: "blog=http%3A%2F%2Fexample.com&comment_post_modified_gmt=2016-03-31T23%3A27%3A59Z&comment_type=comment&permalink=http%3A%2F%2Fexample.com%2Fposts%2Fthis-is-a-post%2F&referrer=http%3A%2F%2Fwww.google.com&user_agent=Mozilla%2F5.0+%28X11%3B+Linux+x86_64%29+AppleWebKit%2F537.36+%28KHTML%2C+like+Gecko%29+Chrome%2F41.0.2227.0+Safari%2F537.36&user_ip=127.0.0.1",
+	},
+	{
+		Field: "Author",
+		Value: "Funny commenter name",
+		Values: map[string]string{
+			"user_ip":                   "127.0.0.1",
+			"user_agent":                "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/41.0.2227.0 Safari/537.36",
+			"referrer":                  "http://www.google.com",
+			"permalink":                 "http://example.com/posts/this-is-a-post/",
+			"comment_post_modified_gmt": "2016-03-31T23:27:59Z",
+			"comment_type":              "comment",
+			"comment_author":            "Funny commenter name",
+		},
+		QueryString: "blog=http%3A%2F%2Fexample.com&comment_author=Funny+commenter+name&comment_post_modified_gmt=2016-03-31T23%3A27%3A59Z&comment_type=comment&permalink=http%3A%2F%2Fexample.com%2Fposts%2Fthis-is-a-post%2F&referrer=http%3A%2F%2Fwww.google.com&user_agent=Mozilla%2F5.0+%28X11%3B+Linux+x86_64%29+AppleWebKit%2F537.36+%28KHTML%2C+like+Gecko%29+Chrome%2F41.0.2227.0+Safari%2F537.36&user_ip=127.0.0.1",
+	},
+	{
+		Field: "AuthorEmail",
+		Value: "first.last@gmail.com",
+		Values: map[string]string{
+			"user_ip":                   "127.0.0.1",
+			"user_agent":                "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/41.0.2227.0 Safari/537.36",
+			"referrer":                  "http://www.google.com",
+			"permalink":                 "http://example.com/posts/this-is-a-post/",
+			"comment_post_modified_gmt": "2016-03-31T23:27:59Z",
+			"comment_type":              "comment",
+			"comment_author":            "Funny commenter name",
+			"comment_author_email":      "first.last@gmail.com",
+		},
+		QueryString: "blog=http%3A%2F%2Fexample.com&comment_author=Funny+commenter+name&comment_author_email=first.last%40gmail.com&comment_post_modified_gmt=2016-03-31T23%3A27%3A59Z&comment_type=comment&permalink=http%3A%2F%2Fexample.com%2Fposts%2Fthis-is-a-post%2F&referrer=http%3A%2F%2Fwww.google.com&user_agent=Mozilla%2F5.0+%28X11%3B+Linux+x86_64%29+AppleWebKit%2F537.36+%28KHTML%2C+like+Gecko%29+Chrome%2F41.0.2227.0+Safari%2F537.36&user_ip=127.0.0.1",
+	},
+	{
+		Field: "AuthorSite",
+		Value: "http://blog.domain.com",
+		Values: map[string]string{
+			"user_ip":                   "127.0.0.1",
+			"user_agent":                "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/41.0.2227.0 Safari/537.36",
+			"referrer":                  "http://www.google.com",
+			"permalink":                 "http://example.com/posts/this-is-a-post/",
+			"comment_post_modified_gmt": "2016-03-31T23:27:59Z",
+			"comment_type":              "comment",
+			"comment_author":            "Funny commenter name",
+			"comment_author_email":      "first.last@gmail.com",
+			"comment_author_url":        "http://blog.domain.com",
+		},
+		QueryString: "blog=http%3A%2F%2Fexample.com&comment_author=Funny+commenter+name&comment_author_email=first.last%40gmail.com&comment_author_url=http%3A%2F%2Fblog.domain.com&comment_post_modified_gmt=2016-03-31T23%3A27%3A59Z&comment_type=comment&permalink=http%3A%2F%2Fexample.com%2Fposts%2Fthis-is-a-post%2F&referrer=http%3A%2F%2Fwww.google.com&user_agent=Mozilla%2F5.0+%28X11%3B+Linux+x86_64%29+AppleWebKit%2F537.36+%28KHTML%2C+like+Gecko%29+Chrome%2F41.0.2227.0+Safari%2F537.36&user_ip=127.0.0.1",
+	},
+	{
+		Field: "Content",
+		Value: "<p>This blog comment contains <strong>bold</strong> and <em>italic</em> text.</p>",
+		Values: map[string]string{
+			"user_ip":                   "127.0.0.1",
+			"user_agent":                "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/41.0.2227.0 Safari/537.36",
+			"referrer":                  "http://www.google.com",
+			"permalink":                 "http://example.com/posts/this-is-a-post/",
+			"comment_post_modified_gmt": "2016-03-31T23:27:59Z",
+			"comment_type":              "comment",
+			"comment_author":            "Funny commenter name",
+			"comment_author_email":      "first.last@gmail.com",
+			"comment_author_url":        "http://blog.domain.com",
+			"comment_content":           "<p>This blog comment contains <strong>bold</strong> and <em>italic</em> text.</p>",
+		},
+		QueryString: "blog=http%3A%2F%2Fexample.com&comment_author=Funny+commenter+name&comment_author_email=first.last%40gmail.com&comment_author_url=http%3A%2F%2Fblog.domain.com&comment_content=%3Cp%3EThis+blog+comment+contains+%3Cstrong%3Ebold%3C%2Fstrong%3E+and+%3Cem%3Eitalic%3C%2Fem%3E+text.%3C%2Fp%3E&comment_post_modified_gmt=2016-03-31T23%3A27%3A59Z&comment_type=comment&permalink=http%3A%2F%2Fexample.com%2Fposts%2Fthis-is-a-post%2F&referrer=http%3A%2F%2Fwww.google.com&user_agent=Mozilla%2F5.0+%28X11%3B+Linux+x86_64%29+AppleWebKit%2F537.36+%28KHTML%2C+like+Gecko%29+Chrome%2F41.0.2227.0+Safari%2F537.36&user_ip=127.0.0.1",
+	},
+	{
+		Field: "Timestamp",
+		// NOTE: Timestamps should be converted to UTC time.
+		Value: time.Date(2016, time.April, 1, 9, 0, 0, 0, UTCMinus5),
+		Values: map[string]string{
+			"user_ip":                   "127.0.0.1",
+			"user_agent":                "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/41.0.2227.0 Safari/537.36",
+			"referrer":                  "http://www.google.com",
+			"permalink":                 "http://example.com/posts/this-is-a-post/",
+			"comment_post_modified_gmt": "2016-03-31T23:27:59Z",
+			"comment_type":              "comment",
+			"comment_author":            "Funny commenter name",
+			"comment_author_email":      "first.last@gmail.com",
+			"comment_author_url":        "http://blog.domain.com",
+			"comment_content":           "<p>This blog comment contains <strong>bold</strong> and <em>italic</em> text.</p>",
+			"comment_date_gmt":          "2016-04-01T14:00:00Z",
+		},
+		QueryString: "blog=http%3A%2F%2Fexample.com&comment_author=Funny+commenter+name&comment_author_email=first.last%40gmail.com&comment_author_url=http%3A%2F%2Fblog.domain.com&comment_content=%3Cp%3EThis+blog+comment+contains+%3Cstrong%3Ebold%3C%2Fstrong%3E+and+%3Cem%3Eitalic%3C%2Fem%3E+text.%3C%2Fp%3E&comment_date_gmt=2016-04-01T14%3A00%3A00Z&comment_post_modified_gmt=2016-03-31T23%3A27%3A59Z&comment_type=comment&permalink=http%3A%2F%2Fexample.com%2Fposts%2Fthis-is-a-post%2F&referrer=http%3A%2F%2Fwww.google.com&user_agent=Mozilla%2F5.0+%28X11%3B+Linux+x86_64%29+AppleWebKit%2F537.36+%28KHTML%2C+like+Gecko%29+Chrome%2F41.0.2227.0+Safari%2F537.36&user_ip=127.0.0.1",
+	},
+	{
+		Field: "Site",
+		// NOTE: Websites specified in the comment data should override the default website.
+		Value: "http://anothersite.com",
+		Values: map[string]string{
+			"user_ip":                   "127.0.0.1",
+			"user_agent":                "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/41.0.2227.0 Safari/537.36",
+			"referrer":                  "http://www.google.com",
+			"permalink":                 "http://example.com/posts/this-is-a-post/",
+			"comment_post_modified_gmt": "2016-03-31T23:27:59Z",
+			"comment_type":              "comment",
+			"comment_author":            "Funny commenter name",
+			"comment_author_email":      "first.last@gmail.com",
+			"comment_author_url":        "http://blog.domain.com",
+			"comment_content":           "<p>This blog comment contains <strong>bold</strong> and <em>italic</em> text.</p>",
+			"comment_date_gmt":          "2016-04-01T14:00:00Z",
+			"blog":                      "http://anothersite.com",
+		},
+		QueryString: "blog=http%3A%2F%2Fanothersite.com&comment_author=Funny+commenter+name&comment_author_email=first.last%40gmail.com&comment_author_url=http%3A%2F%2Fblog.domain.com&comment_content=%3Cp%3EThis+blog+comment+contains+%3Cstrong%3Ebold%3C%2Fstrong%3E+and+%3Cem%3Eitalic%3C%2Fem%3E+text.%3C%2Fp%3E&comment_date_gmt=2016-04-01T14%3A00%3A00Z&comment_post_modified_gmt=2016-03-31T23%3A27%3A59Z&comment_type=comment&permalink=http%3A%2F%2Fexample.com%2Fposts%2Fthis-is-a-post%2F&referrer=http%3A%2F%2Fwww.google.com&user_agent=Mozilla%2F5.0+%28X11%3B+Linux+x86_64%29+AppleWebKit%2F537.36+%28KHTML%2C+like+Gecko%29+Chrome%2F41.0.2227.0+Safari%2F537.36&user_ip=127.0.0.1",
+	},
+	{
+		Field: "SiteLanguage",
+		Value: "en_us",
+		Values: map[string]string{
+			"user_ip":                   "127.0.0.1",
+			"user_agent":                "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/41.0.2227.0 Safari/537.36",
+			"referrer":                  "http://www.google.com",
+			"permalink":                 "http://example.com/posts/this-is-a-post/",
+			"comment_post_modified_gmt": "2016-03-31T23:27:59Z",
+			"comment_type":              "comment",
+			"comment_author":            "Funny commenter name",
+			"comment_author_email":      "first.last@gmail.com",
+			"comment_author_url":        "http://blog.domain.com",
+			"comment_content":           "<p>This blog comment contains <strong>bold</strong> and <em>italic</em> text.</p>",
+			"comment_date_gmt":          "2016-04-01T14:00:00Z",
+			"blog":                      "http://anothersite.com",
+			"blog_lang":                 "en_us",
+		},
+		QueryString: "blog=http%3A%2F%2Fanothersite.com&blog_lang=en_us&comment_author=Funny+commenter+name&comment_author_email=first.last%40gmail.com&comment_author_url=http%3A%2F%2Fblog.domain.com&comment_content=%3Cp%3EThis+blog+comment+contains+%3Cstrong%3Ebold%3C%2Fstrong%3E+and+%3Cem%3Eitalic%3C%2Fem%3E+text.%3C%2Fp%3E&comment_date_gmt=2016-04-01T14%3A00%3A00Z&comment_post_modified_gmt=2016-03-31T23%3A27%3A59Z&comment_type=comment&permalink=http%3A%2F%2Fexample.com%2Fposts%2Fthis-is-a-post%2F&referrer=http%3A%2F%2Fwww.google.com&user_agent=Mozilla%2F5.0+%28X11%3B+Linux+x86_64%29+AppleWebKit%2F537.36+%28KHTML%2C+like+Gecko%29+Chrome%2F41.0.2227.0+Safari%2F537.36&user_ip=127.0.0.1",
+	},
+	{
+		Field: "SiteCharset",
+		Value: "UTF-8",
+		Values: map[string]string{
+			"user_ip":                   "127.0.0.1",
+			"user_agent":                "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/41.0.2227.0 Safari/537.36",
+			"referrer":                  "http://www.google.com",
+			"permalink":                 "http://example.com/posts/this-is-a-post/",
+			"comment_post_modified_gmt": "2016-03-31T23:27:59Z",
+			"comment_type":              "comment",
+			"comment_author":            "Funny commenter name",
+			"comment_author_email":      "first.last@gmail.com",
+			"comment_author_url":        "http://blog.domain.com",
+			"comment_content":           "<p>This blog comment contains <strong>bold</strong> and <em>italic</em> text.</p>",
+			"comment_date_gmt":          "2016-04-01T14:00:00Z",
+			"blog":                      "http://anothersite.com",
+			"blog_lang":                 "en_us",
+			"blog_charset":              "UTF-8",
+		},
+		QueryString: "blog=http%3A%2F%2Fanothersite.com&blog_charset=UTF-8&blog_lang=en_us&comment_author=Funny+commenter+name&comment_author_email=first.last%40gmail.com&comment_author_url=http%3A%2F%2Fblog.domain.com&comment_content=%3Cp%3EThis+blog+comment+contains+%3Cstrong%3Ebold%3C%2Fstrong%3E+and+%3Cem%3Eitalic%3C%2Fem%3E+text.%3C%2Fp%3E&comment_date_gmt=2016-04-01T14%3A00%3A00Z&comment_post_modified_gmt=2016-03-31T23%3A27%3A59Z&comment_type=comment&permalink=http%3A%2F%2Fexample.com%2Fposts%2Fthis-is-a-post%2F&referrer=http%3A%2F%2Fwww.google.com&user_agent=Mozilla%2F5.0+%28X11%3B+Linux+x86_64%29+AppleWebKit%2F537.36+%28KHTML%2C+like+Gecko%29+Chrome%2F41.0.2227.0+Safari%2F537.36&user_ip=127.0.0.1",
+	},
+}
+
+// TestNewCheckers verifies that NewChecker and NewCheckerClient
+// work as expected.
+func TestNewCheckers(t *testing.T) {
+
+	// The following calls should be functionally equivalent.
+	ch1 := gokismet.NewChecker(TestAPIKey, TestSite)
+	ch2 := gokismet.NewCheckerClient(TestAPIKey, TestSite, nil)
+	ch3 := gokismet.NewCheckerClient(TestAPIKey, TestSite, http.DefaultClient)
+
+	if ch1 == ch2 || ch1 == ch3 || ch2 == ch3 {
+		t.Errorf("NewChecker[Client] should create distinct Checkers")
+	}
+
+	if *ch1 != *ch3 {
+		t.Errorf("Calling NewChecker should be the same as calling NewCheckerClient with the default client")
+	}
+
+	if *ch2 != *ch3 {
+		t.Errorf("Calling NewCheckerClient with a nil Client should be the same as calling it with the default client")
 	}
 }
 
-// statusToString returns a string representation of a
-// Status enum value.
-func statusToString(status gokismet.Status) string {
+// TestCommentValues verifies that Comment.Values generates the
+// correct key-value pairs.
+func TestCommentValues(t *testing.T) {
+
+	comment := &gokismet.Comment{}
+	setter := NewFieldSetter(comment)
+
+	// RequestTests should have one test case for each Comment
+	// field plus an extra test case for when no fields are set.
+	if len(RequestTests) != setter.NumFields()+1 {
+		t.Errorf("Not all Comment fields are being tested: expected %d fields, got %d",
+			setter.NumFields()+1, len(RequestTests))
+	}
+
+	// Set the Comment fields one at a time and check that
+	// Comment.Values returns the expected key-value pairs.
+	for i, test := range RequestTests {
+
+		if test.Field != "" {
+			if err := setter.Set(test.Field, test.Value); err != nil {
+				t.Errorf("Test %d: %s", i+1, err)
+				continue
+			}
+		}
+
+		errors := compareStringMaps(test.Values, comment.Values(), "Key-Value pair(s)")
+		for _, err := range errors {
+			t.Errorf("Test %d: %s", i+1, err)
+		}
+	}
+}
+
+// TestRequest_Check verifies that Checker.Check produces
+// well-formed HTTP requests.
+func TestRequest_Check(t *testing.T) {
+
+	fn := toErrorFunc(fnCheck)
+	url := "https://123456789abc.rest.akismet.com/1.1/comment-check"
+
+	testRequest(t, fn, url)
+}
+
+// TestRequest_ReportHam verifies that Checker.ReportHam produces
+// well-formed HTTP requests.
+func TestRequest_ReportHam(t *testing.T) {
+
+	fn := fnReportHam
+	url := "https://123456789abc.rest.akismet.com/1.1/submit-ham"
+
+	testRequest(t, fn, url)
+}
+
+// TestRequest_ReportSpam verifies that Checker.ReportSpam produces
+// well-formed HTTP requests.
+func TestRequest_ReportSpam(t *testing.T) {
+
+	fn := fnReportSpam
+	url := "https://123456789abc.rest.akismet.com/1.1/submit-spam"
+
+	testRequest(t, fn, url)
+}
+
+// testRequest verifies that HTTP requests for the given Checker
+// method are well-formed.
+func testRequest(t *testing.T, fn ErrorFunc, expectedURL string) {
+
+	client := &RequestStore{}
+	verifyingClient := adaptClient(client, withResponder(verifyingResponder))
+
+	ch := gokismet.NewCheckerClient(TestAPIKey, TestSite, verifyingClient)
+
+	// For each test case in the request test data, call the
+	// Checker method with the test's key-value pairs and
+	// validate the resulting request.
+	for i, test := range RequestTests {
+
+		fn(ch, test.Values)
+
+		// The first method call generates two requests: one to
+		// verify the API key and one to actually make the call.
+		// All subsequent method calls add one request to the
+		// RequestStore. So when i == 0 we should have 2 requests
+		// in the RequestStore. When i == 1 we should have 3, and
+		// so on...
+		if len(client.Requests) != i+2 {
+			t.Fatalf("Test %d: Expected %d request(s), got %d", i+1, i+2, len(client.Requests))
+		}
+
+		var errors []error
+
+		// Check the verify key request from the first method call.
+		if i == 0 {
+			exp := requestInfoFor("https://rest.akismet.com/1.1/verify-key", "blog=http%3A%2F%2Fexample.com&key=123456789abc")
+			errors = append(errors, compareRequestInfo(exp, client.Requests[0])...)
+		}
+
+		// Check the request from the most recent method call.
+		exp := requestInfoFor(expectedURL, test.QueryString)
+		errors = append(errors, compareRequestInfo(exp, client.Requests[i+1])...)
+
+		for _, err := range errors {
+			t.Errorf("Test %d: %s", i+1, err)
+		}
+	}
+}
+
+// requestInfoFor returns the expected request data for a given
+// Akismet endpoint URL and query string.
+func requestInfoFor(url, body string) *RequestInfo {
+	return &RequestInfo{
+		Method: "POST",
+		URL:    url,
+		HeaderItems: map[string]string{
+			"Content-Type": "application/x-www-form-urlencoded",
+			"User-Agent":   "Gokismet/3.0",
+		},
+		Body: body,
+	}
+}
+
+// A ResponseTest defines a test case for the TestResponse functions.
+type ResponseTest struct {
+	// Does this test need a verified API key?
+	IsVerified bool
+	// Mock Akismet responses to feed into gokismet.
+	Responses map[string]*ResponseInfo
+	// The expected spam status given the responses above.
+	SpamStatus gokismet.SpamStatus
+	// The expected error given the responses above.
+	Error error
+}
+
+// sharedResponseTests returns the ResponseTest cases that are common
+// to all three Checker methods.
+func sharedResponseTests(method string) []ResponseTest {
+	return []ResponseTest{
+		{
+			// Error while verifying the API key.
+			Error: errors.New(`No response for "verify-key"`),
+		},
+		{
+			// Non-200 HTTP status while verifying the API key.
+			Responses: map[string]*ResponseInfo{
+				"verify-key": {
+					StatusCode: http.StatusMovedPermanently,
+				},
+			},
+			Error: errors.New("got 301 Moved Permanently from https://rest.akismet.com/1.1/verify-key"),
+		},
+		{
+			// API key not verified.
+			Responses: map[string]*ResponseInfo{
+				"verify-key": {
+					Body:       "invalid",
+					StatusCode: http.StatusOK,
+				},
+			},
+			Error: &gokismet.KeyError{
+				Key:  "123456789abc",
+				Site: "http://example.com",
+				ValError: &gokismet.ValError{
+					Method:   "verify-key",
+					Response: "invalid",
+				},
+			},
+		},
+		{
+			// API key not verified with help message.
+			Responses: map[string]*ResponseInfo{
+				"verify-key": {
+					Body:       "invalid",
+					StatusCode: http.StatusOK,
+					HeaderItems: map[string]string{
+						"X-akismet-debug-help": "A helpful diagnostic message",
+					},
+				},
+			},
+			Error: &gokismet.KeyError{
+				Key:  "123456789abc",
+				Site: "http://example.com",
+				ValError: &gokismet.ValError{
+					Method:   "verify-key",
+					Response: "invalid",
+					Hint:     "A helpful diagnostic message",
+				},
+			},
+		},
+		{
+			// Error during Akismet call.
+			IsVerified: true,
+			Error:      errors.New("No response for \"" + method + "\""),
+		},
+		{
+			// Non-200 HTTP status from Akismet call.
+			IsVerified: true,
+			Responses: map[string]*ResponseInfo{
+				method: {
+					StatusCode: http.StatusInternalServerError,
+				},
+			},
+			Error: errors.New("got 500 Internal Server Error from https://123456789abc.rest.akismet.com/1.1/" + method),
+		},
+		{
+			// Unexpected return value from Akismet call.
+			IsVerified: true,
+			Responses: map[string]*ResponseInfo{
+				method: {
+					Body:       "invalid",
+					StatusCode: http.StatusOK,
+				},
+			},
+			Error: &gokismet.ValError{
+				Method:   method,
+				Response: "invalid",
+			},
+		},
+		{
+			// Unexpected return value with help message.
+			IsVerified: true,
+			Responses: map[string]*ResponseInfo{
+				method: {
+					Body:       "invalid",
+					StatusCode: http.StatusOK,
+					HeaderItems: map[string]string{
+						"X-akismet-debug-help": "A helpful diagnostic message",
+					},
+				},
+			},
+			Error: &gokismet.ValError{
+				Method:   method,
+				Response: "invalid",
+				Hint:     "A helpful diagnostic message",
+			},
+		},
+	}
+}
+
+// TestResponse_Check verifies that Checker.Check returns the
+// correct values for various Akismet responses.
+func TestResponse_Check(t *testing.T) {
+
+	checkTests := []ResponseTest{
+		{
+			// Negative spam response.
+			IsVerified: true,
+			Responses: map[string]*ResponseInfo{
+				"comment-check": {
+					Body:       "false",
+					StatusCode: http.StatusOK,
+				},
+			},
+			SpamStatus: gokismet.StatusHam,
+		},
+		{
+			// Positive spam response.
+			IsVerified: true,
+			Responses: map[string]*ResponseInfo{
+				"comment-check": {
+					Body:       "true",
+					StatusCode: http.StatusOK,
+				},
+			},
+			SpamStatus: gokismet.StatusProbableSpam,
+		},
+		{
+			// Pervasive spam response.
+			IsVerified: true,
+			Responses: map[string]*ResponseInfo{
+				"comment-check": {
+					Body:       "true",
+					StatusCode: http.StatusOK,
+					HeaderItems: map[string]string{
+						"X-akismet-pro-tip": "discard",
+					},
+				},
+			},
+			SpamStatus: gokismet.StatusDefiniteSpam,
+		},
+	}
+
+	tests := sharedResponseTests("comment-check")
+	tests = append(tests, checkTests...)
+
+	testResponse(t, fnCheck, tests)
+}
+
+// TestResponse_ReportHam verifies that Checker.ReportHam
+// returns the correct values for various Akismet responses.
+func TestResponse_ReportHam(t *testing.T) {
+	testResponse_Report(t, "submit-ham", fnReportHam)
+}
+
+// TestResponse_ReportSpam verifies that Checker.ReportSpam
+// returns the correct values for various Akismet responses.
+func TestResponse_ReportSpam(t *testing.T) {
+	testResponse_Report(t, "submit-spam", fnReportSpam)
+}
+
+// testResponse_Report handles the heavy lifting for the
+// TestResponse_ReportHam and TestResponse_ReportSpam functions.
+func testResponse_Report(t *testing.T, method string, submit ErrorFunc) {
+
+	reportTests := []ResponseTest{
+		{
+			// Success response.
+			IsVerified: true,
+			Responses: map[string]*ResponseInfo{
+				method: {
+					Body:       "Thanks for making the web a better place.",
+					StatusCode: http.StatusOK,
+				},
+			},
+		},
+	}
+
+	tests := sharedResponseTests(method)
+	tests = append(tests, reportTests...)
+
+	testResponse(t, toStatusErrorFunc(submit), tests)
+}
+
+// testResponse verifies that a Checker method returns the
+// correct values for the Akismet responses provided.
+func testResponse(t *testing.T, fn StatusErrorFunc, tests []ResponseTest) {
+
+	for i, test := range tests {
+
+		client := &Responder{
+			Responses: test.Responses,
+		}
+		if test.IsVerified {
+			client.AddResponses(verifyingResponder)
+		}
+
+		ch := gokismet.NewCheckerClient(TestAPIKey, TestSite, client)
+		status, err := fn(ch, nil)
+
+		if status != test.SpamStatus {
+			t.Errorf("Test %d: Expected Spam Status %q, got %q", i+1,
+				statusToString(test.SpamStatus), statusToString(status))
+		}
+
+		errors := compareError(test.Error, err)
+		for _, err := range errors {
+			t.Errorf("Test %d: %s", i+1, err)
+		}
+	}
+}
+
+// TestError_ValError tests string formatting for the ValError
+// type.
+func TestError_ValError(t *testing.T) {
+
+	tests := []struct {
+		Method   string
+		Response string
+		Hint     string
+		Expected string
+	}{
+		{
+			Method:   "comment-check",
+			Expected: `comment-check returned an empty string (expected true or false)`,
+		},
+		{
+			Method:   "comment-check",
+			Hint:     "A helpful diagnostic message",
+			Expected: `comment-check returned an empty string (A helpful diagnostic message)`,
+		},
+		{
+			Method:   "comment-check",
+			Response: "invalid",
+			Expected: `comment-check returned "invalid" (expected true or false)`,
+		},
+		{
+			Method:   "comment-check",
+			Response: "invalid",
+			Hint:     "A helpful diagnostic message",
+			Expected: `comment-check returned "invalid" (A helpful diagnostic message)`,
+		},
+		{
+			Method:   "submit-ham",
+			Expected: `submit-ham returned an empty string (expected thank you message)`,
+		},
+		{
+			Method:   "submit-ham",
+			Hint:     "A helpful diagnostic message",
+			Expected: `submit-ham returned an empty string (A helpful diagnostic message)`,
+		},
+		{
+			Method:   "submit-ham",
+			Response: "invalid",
+			Expected: `submit-ham returned "invalid" (expected thank you message)`,
+		},
+		{
+			Method:   "submit-ham",
+			Response: "invalid",
+			Hint:     "A helpful diagnostic message",
+			Expected: `submit-ham returned "invalid" (A helpful diagnostic message)`,
+		},
+		{
+			Method:   "submit-spam",
+			Expected: `submit-spam returned an empty string (expected thank you message)`,
+		},
+		{
+			Method:   "submit-spam",
+			Hint:     "A helpful diagnostic message",
+			Expected: `submit-spam returned an empty string (A helpful diagnostic message)`,
+		},
+		{
+			Method:   "submit-spam",
+			Response: "invalid",
+			Expected: `submit-spam returned "invalid" (expected thank you message)`,
+		},
+		{
+			Method:   "submit-spam",
+			Response: "invalid",
+			Hint:     "A helpful diagnostic message",
+			Expected: `submit-spam returned "invalid" (A helpful diagnostic message)`,
+		},
+	}
+
+	for i, test := range tests {
+
+		err := gokismet.ValError{
+			Method:   test.Method,
+			Response: test.Response,
+			Hint:     test.Hint,
+		}
+
+		if got := err.Error(); got != test.Expected {
+			t.Errorf("Test %d: Expected %q, got %q", i+1, test.Expected, got)
+		}
+	}
+}
+
+// TestError_KeyError tests string formatting for the KeyError
+// type.
+func TestError_KeyError(t *testing.T) {
+
+	tests := []struct {
+		Response string
+		Hint     string
+		Expected string
+	}{
+		{
+			Expected: `key 123456789abc not verified: verify-key returned an empty string`,
+		},
+		{
+			Hint:     "A helpful diagnostic message",
+			Expected: `key 123456789abc not verified: verify-key returned an empty string (A helpful diagnostic message)`,
+		},
+		{
+			Response: "invalid",
+			Expected: `key 123456789abc not verified: verify-key returned "invalid"`,
+		},
+		{
+			Response: "invalid",
+			Hint:     "A helpful diagnostic message",
+			Expected: `key 123456789abc not verified: verify-key returned "invalid" (A helpful diagnostic message)`,
+		},
+	}
+
+	for i, test := range tests {
+
+		err := gokismet.KeyError{
+			Key:  TestAPIKey,
+			Site: TestSite,
+			ValError: &gokismet.ValError{
+				Method:   "verify-key",
+				Response: test.Response,
+				Hint:     test.Hint,
+			},
+		}
+
+		if got := err.Error(); got != test.Expected {
+			t.Errorf("Test %d: Expected %q, got %q", i+1, test.Expected, got)
+		}
+	}
+}
+
+// An AkismetTest defines a test case for the TestAkismet
+// functions.
+type AkismetTest struct {
+	// Additional comment parameters to pass to Akismet.
+	Params map[string]string
+	// Expected spam status returned by gokismet.
+	SpamStatus gokismet.SpamStatus
+	// Expected error returned by gokismet.
+	Error error
+}
+
+// TestAkismet_Check uses the live Akismet API to validate
+// the results of the Checker.Check method.
+func TestAkismet_Check(t *testing.T) {
+
+	tests := []AkismetTest{
+		{
+			// A user_role of "administrator" should trigger
+			// a negative spam response from Akismet.
+			Params: map[string]string{
+				"is_test":   "true",
+				"user_role": "administrator",
+			},
+			SpamStatus: gokismet.StatusHam,
+		},
+		{
+			// A comment_author of "viagra-test-123" should
+			// trigger a positive spam response from Akismet.
+			Params: map[string]string{
+				"is_test":        "true",
+				"comment_author": "viagra-test-123",
+			},
+			SpamStatus: gokismet.StatusProbableSpam,
+		},
+		{
+			// Adding test_discard should trigger a "pervasive"
+			// spam response from Akismet.
+			Params: map[string]string{
+				"is_test":        "true",
+				"comment_author": "viagra-test-123",
+				"test_discard":   "true",
+			},
+			SpamStatus: gokismet.StatusDefiniteSpam,
+		},
+	}
+
+	testAkismet(t, fnCheck, tests)
+}
+
+// TestAkismet_ReportHam uses the live Akismet API to
+// validate the results of the Checker.ReportHam method.
+func TestAkismet_ReportHam(t *testing.T) {
+	testAkismet_Report(t, fnReportHam)
+}
+
+// TestAkismet_ReportSpam uses the live Akismet API to
+// validate the results of the Checker.ReportSpam method.
+func TestAkismet_ReportSpam(t *testing.T) {
+	testAkismet_Report(t, fnReportSpam)
+}
+
+// testAkismet_Report handles the heavy lifting for the
+// TestAkismet_ReportSpam and TestAkismet_ReportHam functions.
+func testAkismet_Report(t *testing.T, submit ErrorFunc) {
+
+	tests := []AkismetTest{
+		{
+			// This should trigger a success response.
+			Params: map[string]string{
+				"is_test": "true",
+			},
+		},
+	}
+
+	testAkismet(t, toStatusErrorFunc(submit), tests)
+}
+
+// testAkismet uses the live Akismet API to verify that
+// a Checker method returns the expected results.
+func testAkismet(t *testing.T, fn StatusErrorFunc, tests []AkismetTest) {
+
+	// Only run this test if we have an API key and website.
+	if *flags.APIKey == "" || *flags.Site == "" {
+		t.SkipNow()
+	}
+
+	// Values are from the Akismet API docs.
+	comment := &gokismet.Comment{
+		UserIP:      "127.0.0.1",
+		UserAgent:   "Mozilla/5.0 (Windows; U; Windows NT 6.1; en-US; rv:1.9.2) Gecko/20100115 Firefox/3.6",
+		Referer:     "http://www.google.com",
+		Page:        path.Join(*flags.Site, "blog/post=1"),
+		Type:        "comment",
+		Author:      "admin",
+		AuthorEmail: "test@test.com",
+		AuthorSite:  "http://www.CheckOutMyCoolSite.com",
+		Content:     "It means a lot that you would take the time to review our software. Thanks again.",
+	}
+
+	ch := gokismet.NewChecker(*flags.APIKey, *flags.Site)
+
+	for i, test := range tests {
+
+		values := comment.Values()
+		// Add any custom parameters to our comment data.
+		for k, v := range test.Params {
+			values[k] = v
+		}
+
+		// Call the Checker method.
+		status, err := fn(ch, values)
+
+		// Check the returned spam status and error.
+		if status != test.SpamStatus {
+			t.Errorf("Test %d: Expected Spam Status %q, got %q", i+1,
+				statusToString(test.SpamStatus), statusToString(status))
+		}
+
+		errors := compareError(test.Error, err)
+		for _, err := range errors {
+			t.Errorf("Test %d: %s", i+1, err)
+		}
+	}
+}
+
+// statusToString returns a string representation of
+// a SpamStatus.
+func statusToString(status gokismet.SpamStatus) string {
 	switch status {
 	case gokismet.StatusUnknown:
 		return "Unknown"
-	case gokismet.StatusOK:
-		return "Not Spam"
-	case gokismet.StatusSpam:
-		return "Spam"
-	case gokismet.StatusBlatantSpam:
-		return "Blatant Spam"
-	default:
-		return "!Invalid Status!"
+	case gokismet.StatusHam:
+		return "Ham"
+	case gokismet.StatusProbableSpam:
+		return "Probable Spam"
+	case gokismet.StatusDefiniteSpam:
+		return "Definite Spam"
 	}
+
+	panic("statusToString: unknown status")
 }
 
 //
-// Here follows a bunch of compareXXX functions used to verify
+// Here follows a bunch of comparison functions used to verify
 // that two instances of a particular type have the same values.
 //
 
@@ -270,10 +1137,6 @@ func compareStringMaps(exp, got map[string]string, things string) []error {
 	}
 
 	return errors
-}
-
-func compareKeyValuePairs(exp, got map[string]string) []error {
-	return compareStringMaps(exp, got, "Key-Value pair(s)")
 }
 
 func compareRequestInfo(exp, got *RequestInfo) []error {
@@ -307,993 +1170,74 @@ func compareError(exp, got error) []error {
 			}
 		}
 		return nil
-	case *TestClientError:
-		if got, ok := got.(*TestClientError); ok {
-			return compareTestClientError(exp, got)
+	case *gokismet.KeyError:
+		err, ok := got.(*gokismet.KeyError)
+		if !ok {
+			return []error{
+				fmt.Errorf("Expected a KeyError, got %T %s", got, got),
+			}
 		}
-	case *gokismet.AuthError:
-		if got, ok := got.(*gokismet.AuthError); ok {
-			return compareGokismetAuthError(exp, got)
+		return compareKeyError(exp, err)
+	case *gokismet.ValError:
+		err, ok := got.(*gokismet.ValError)
+		if !ok {
+			return []error{
+				fmt.Errorf("Expected a ValError, got %T %s", got, got),
+			}
 		}
-	case *gokismet.Error:
-		if got, ok := got.(*gokismet.Error); ok {
-			return compareGokismetError(exp, got)
-		}
+		return compareValError(exp, err)
 	default:
-		return []error{
-			fmt.Errorf("Cannot handle 'expected' error %T %s", exp, exp),
+		if got.Error() != exp.Error() {
+			return []error{
+				fmt.Errorf("Expected error %v, got %v", exp, got),
+			}
 		}
-	}
-
-	return []error{
-		fmt.Errorf("Expected error %T %s, got %T %s", exp, exp, got, got),
+		return nil
 	}
 }
 
-func compareTestClientError(exp, got *TestClientError) []error {
+func compareValError(exp, got *gokismet.ValError) []error {
 
 	var errors []error
 
-	if got.Command != exp.Command {
-		errors = append(errors, fmt.Errorf("Expected a TestClientError with Command %q, got %q", exp.Command, got.Command))
-	}
-
-	return errors
-}
-
-func compareGokismetError(exp, got *gokismet.Error) []error {
-
-	var errors []error
-
-	if got.Action != exp.Action {
-		errors = append(errors, fmt.Errorf("Expected an Error with Action %q, got %q",
-			actionToString(exp.Action), actionToString(got.Action)))
+	if got.Method != exp.Method {
+		errors = append(errors, fmt.Errorf("Expected a ValError with Method %q, got %q", exp.Method, got.Method))
 	}
 
 	if got.Response != exp.Response {
-		errors = append(errors, fmt.Errorf("Expected an Error with Response %q, got %q", exp.Response, got.Response))
+		errors = append(errors, fmt.Errorf("Expected a ValError with Response %q, got %q", exp.Response, got.Response))
 	}
 
 	if got.Hint != exp.Hint {
-		errors = append(errors, fmt.Errorf("Expected an Error with Hint %q, got %q", exp.Hint, got.Hint))
+		errors = append(errors, fmt.Errorf("Expected a ValError with Hint %q, got %q", exp.Hint, got.Hint))
 	}
 
 	return errors
 }
 
-func compareGokismetAuthError(exp, got *gokismet.AuthError) []error {
+func compareKeyError(exp, got *gokismet.KeyError) []error {
 
 	var errors []error
 
 	if got.Key != exp.Key {
-		errors = append(errors, fmt.Errorf("Expected an AuthError with Key %q, got %q", exp.Key, got.Key))
+		errors = append(errors, fmt.Errorf("Expected a KeyError with Key %q, got %q", exp.Key, got.Key))
 	}
 
 	if got.Site != exp.Site {
-		errors = append(errors, fmt.Errorf("Expected an AuthError with Site %q, got %q", exp.Site, got.Site))
+		errors = append(errors, fmt.Errorf("Expected a KeyError with Site %q, got %q", exp.Site, got.Site))
+	}
+
+	if got.Method != exp.Method {
+		errors = append(errors, fmt.Errorf("Expected a KeyError with Method %q, got %q", exp.Method, got.Method))
 	}
 
 	if got.Response != exp.Response {
-		errors = append(errors, fmt.Errorf("Expected an AuthError with Response %q, got %q", exp.Response, got.Response))
+		errors = append(errors, fmt.Errorf("Expected a KeyError with Response %q, got %q", exp.Response, got.Response))
 	}
 
 	if got.Hint != exp.Hint {
-		errors = append(errors, fmt.Errorf("Expected an AuthError with Hint %q, got %q", exp.Hint, got.Hint))
+		errors = append(errors, fmt.Errorf("Expected a KeyError with Hint %q, got %q", exp.Hint, got.Hint))
 	}
 
 	return errors
-}
-
-// Test data for the TestCommentValue and TestRequestXXX functions.
-var CommentData = []struct {
-	// Name of a field in the Comment type.
-	Field string
-	// Value to be assigned to the field.
-	Value interface{}
-	// Expected return value of Comment.Values given
-	// a Comment with its fields set as above.
-	Values map[string]string
-	// Expected query string generated by the API type
-	// given the key-value pairs above.
-	EncodedValues string
-}{
-	{
-		// NOTE: Checker should include the verified website by default.
-		EncodedValues: "blog=http%3A%2F%2Fwww.example.com",
-	},
-	{
-		Field: "UserIP",
-		Value: "127.0.0.1",
-		Values: map[string]string{
-			"user_ip": "127.0.0.1",
-		},
-		EncodedValues: "blog=http%3A%2F%2Fwww.example.com&user_ip=127.0.0.1",
-	},
-	{
-		Field: "UserAgent",
-		Value: "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/41.0.2227.0 Safari/537.36",
-		Values: map[string]string{
-			"user_ip":    "127.0.0.1",
-			"user_agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/41.0.2227.0 Safari/537.36",
-		},
-		EncodedValues: "blog=http%3A%2F%2Fwww.example.com&user_agent=Mozilla%2F5.0+%28X11%3B+Linux+x86_64%29+AppleWebKit%2F537.36+%28KHTML%2C+like+Gecko%29+Chrome%2F41.0.2227.0+Safari%2F537.36&user_ip=127.0.0.1",
-	},
-	{
-		Field: "Referer",
-		Value: "http://www.google.com",
-		Values: map[string]string{
-			"user_ip":    "127.0.0.1",
-			"user_agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/41.0.2227.0 Safari/537.36",
-			"referrer":   "http://www.google.com",
-		},
-		EncodedValues: "blog=http%3A%2F%2Fwww.example.com&referrer=http%3A%2F%2Fwww.google.com&user_agent=Mozilla%2F5.0+%28X11%3B+Linux+x86_64%29+AppleWebKit%2F537.36+%28KHTML%2C+like+Gecko%29+Chrome%2F41.0.2227.0+Safari%2F537.36&user_ip=127.0.0.1",
-	},
-	{
-		Field: "Page",
-		Value: "http://example.com/posts/this-is-a-post/",
-		Values: map[string]string{
-			"user_ip":    "127.0.0.1",
-			"user_agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/41.0.2227.0 Safari/537.36",
-			"referrer":   "http://www.google.com",
-			"permalink":  "http://example.com/posts/this-is-a-post/",
-		},
-		EncodedValues: "blog=http%3A%2F%2Fwww.example.com&permalink=http%3A%2F%2Fexample.com%2Fposts%2Fthis-is-a-post%2F&referrer=http%3A%2F%2Fwww.google.com&user_agent=Mozilla%2F5.0+%28X11%3B+Linux+x86_64%29+AppleWebKit%2F537.36+%28KHTML%2C+like+Gecko%29+Chrome%2F41.0.2227.0+Safari%2F537.36&user_ip=127.0.0.1",
-	},
-	{
-		Field: "PageTimestamp",
-		// NOTE: Times should be converted to UTC.
-		Value: time.Date(2016, time.March, 31, 18, 27, 59, 0, UTCMinus5),
-		Values: map[string]string{
-			"user_ip":                   "127.0.0.1",
-			"user_agent":                "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/41.0.2227.0 Safari/537.36",
-			"referrer":                  "http://www.google.com",
-			"permalink":                 "http://example.com/posts/this-is-a-post/",
-			"comment_post_modified_gmt": "2016-03-31T23:27:59Z",
-		},
-		EncodedValues: "blog=http%3A%2F%2Fwww.example.com&comment_post_modified_gmt=2016-03-31T23%3A27%3A59Z&permalink=http%3A%2F%2Fexample.com%2Fposts%2Fthis-is-a-post%2F&referrer=http%3A%2F%2Fwww.google.com&user_agent=Mozilla%2F5.0+%28X11%3B+Linux+x86_64%29+AppleWebKit%2F537.36+%28KHTML%2C+like+Gecko%29+Chrome%2F41.0.2227.0+Safari%2F537.36&user_ip=127.0.0.1",
-	},
-	{
-		Field: "Type",
-		Value: "comment",
-		Values: map[string]string{
-			"user_ip":                   "127.0.0.1",
-			"user_agent":                "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/41.0.2227.0 Safari/537.36",
-			"referrer":                  "http://www.google.com",
-			"permalink":                 "http://example.com/posts/this-is-a-post/",
-			"comment_post_modified_gmt": "2016-03-31T23:27:59Z",
-			"comment_type":              "comment",
-		},
-		EncodedValues: "blog=http%3A%2F%2Fwww.example.com&comment_post_modified_gmt=2016-03-31T23%3A27%3A59Z&comment_type=comment&permalink=http%3A%2F%2Fexample.com%2Fposts%2Fthis-is-a-post%2F&referrer=http%3A%2F%2Fwww.google.com&user_agent=Mozilla%2F5.0+%28X11%3B+Linux+x86_64%29+AppleWebKit%2F537.36+%28KHTML%2C+like+Gecko%29+Chrome%2F41.0.2227.0+Safari%2F537.36&user_ip=127.0.0.1",
-	},
-	{
-		Field: "Author",
-		Value: "Funny commenter name",
-		Values: map[string]string{
-			"user_ip":                   "127.0.0.1",
-			"user_agent":                "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/41.0.2227.0 Safari/537.36",
-			"referrer":                  "http://www.google.com",
-			"permalink":                 "http://example.com/posts/this-is-a-post/",
-			"comment_post_modified_gmt": "2016-03-31T23:27:59Z",
-			"comment_type":              "comment",
-			"comment_author":            "Funny commenter name",
-		},
-		EncodedValues: "blog=http%3A%2F%2Fwww.example.com&comment_author=Funny+commenter+name&comment_post_modified_gmt=2016-03-31T23%3A27%3A59Z&comment_type=comment&permalink=http%3A%2F%2Fexample.com%2Fposts%2Fthis-is-a-post%2F&referrer=http%3A%2F%2Fwww.google.com&user_agent=Mozilla%2F5.0+%28X11%3B+Linux+x86_64%29+AppleWebKit%2F537.36+%28KHTML%2C+like+Gecko%29+Chrome%2F41.0.2227.0+Safari%2F537.36&user_ip=127.0.0.1",
-	},
-	{
-		Field: "AuthorEmail",
-		Value: "first.last@gmail.com",
-		Values: map[string]string{
-			"user_ip":                   "127.0.0.1",
-			"user_agent":                "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/41.0.2227.0 Safari/537.36",
-			"referrer":                  "http://www.google.com",
-			"permalink":                 "http://example.com/posts/this-is-a-post/",
-			"comment_post_modified_gmt": "2016-03-31T23:27:59Z",
-			"comment_type":              "comment",
-			"comment_author":            "Funny commenter name",
-			"comment_author_email":      "first.last@gmail.com",
-		},
-		EncodedValues: "blog=http%3A%2F%2Fwww.example.com&comment_author=Funny+commenter+name&comment_author_email=first.last%40gmail.com&comment_post_modified_gmt=2016-03-31T23%3A27%3A59Z&comment_type=comment&permalink=http%3A%2F%2Fexample.com%2Fposts%2Fthis-is-a-post%2F&referrer=http%3A%2F%2Fwww.google.com&user_agent=Mozilla%2F5.0+%28X11%3B+Linux+x86_64%29+AppleWebKit%2F537.36+%28KHTML%2C+like+Gecko%29+Chrome%2F41.0.2227.0+Safari%2F537.36&user_ip=127.0.0.1",
-	},
-	{
-		Field: "AuthorPage",
-		Value: "http://blog.domain.com",
-		Values: map[string]string{
-			"user_ip":                   "127.0.0.1",
-			"user_agent":                "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/41.0.2227.0 Safari/537.36",
-			"referrer":                  "http://www.google.com",
-			"permalink":                 "http://example.com/posts/this-is-a-post/",
-			"comment_post_modified_gmt": "2016-03-31T23:27:59Z",
-			"comment_type":              "comment",
-			"comment_author":            "Funny commenter name",
-			"comment_author_email":      "first.last@gmail.com",
-			"comment_author_url":        "http://blog.domain.com",
-		},
-		EncodedValues: "blog=http%3A%2F%2Fwww.example.com&comment_author=Funny+commenter+name&comment_author_email=first.last%40gmail.com&comment_author_url=http%3A%2F%2Fblog.domain.com&comment_post_modified_gmt=2016-03-31T23%3A27%3A59Z&comment_type=comment&permalink=http%3A%2F%2Fexample.com%2Fposts%2Fthis-is-a-post%2F&referrer=http%3A%2F%2Fwww.google.com&user_agent=Mozilla%2F5.0+%28X11%3B+Linux+x86_64%29+AppleWebKit%2F537.36+%28KHTML%2C+like+Gecko%29+Chrome%2F41.0.2227.0+Safari%2F537.36&user_ip=127.0.0.1",
-	},
-	{
-		Field: "Content",
-		Value: "<p>This blog comment contains <strong>bold</strong> and <em>italic</em> text.</p>",
-		Values: map[string]string{
-			"user_ip":                   "127.0.0.1",
-			"user_agent":                "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/41.0.2227.0 Safari/537.36",
-			"referrer":                  "http://www.google.com",
-			"permalink":                 "http://example.com/posts/this-is-a-post/",
-			"comment_post_modified_gmt": "2016-03-31T23:27:59Z",
-			"comment_type":              "comment",
-			"comment_author":            "Funny commenter name",
-			"comment_author_email":      "first.last@gmail.com",
-			"comment_author_url":        "http://blog.domain.com",
-			"comment_content":           "<p>This blog comment contains <strong>bold</strong> and <em>italic</em> text.</p>",
-		},
-		EncodedValues: "blog=http%3A%2F%2Fwww.example.com&comment_author=Funny+commenter+name&comment_author_email=first.last%40gmail.com&comment_author_url=http%3A%2F%2Fblog.domain.com&comment_content=%3Cp%3EThis+blog+comment+contains+%3Cstrong%3Ebold%3C%2Fstrong%3E+and+%3Cem%3Eitalic%3C%2Fem%3E+text.%3C%2Fp%3E&comment_post_modified_gmt=2016-03-31T23%3A27%3A59Z&comment_type=comment&permalink=http%3A%2F%2Fexample.com%2Fposts%2Fthis-is-a-post%2F&referrer=http%3A%2F%2Fwww.google.com&user_agent=Mozilla%2F5.0+%28X11%3B+Linux+x86_64%29+AppleWebKit%2F537.36+%28KHTML%2C+like+Gecko%29+Chrome%2F41.0.2227.0+Safari%2F537.36&user_ip=127.0.0.1",
-	},
-	{
-		Field: "Timestamp",
-		// NOTE: Times should be converted to UTC.
-		Value: time.Date(2016, time.April, 1, 9, 0, 0, 0, UTCMinus5),
-		Values: map[string]string{
-			"user_ip":                   "127.0.0.1",
-			"user_agent":                "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/41.0.2227.0 Safari/537.36",
-			"referrer":                  "http://www.google.com",
-			"permalink":                 "http://example.com/posts/this-is-a-post/",
-			"comment_post_modified_gmt": "2016-03-31T23:27:59Z",
-			"comment_type":              "comment",
-			"comment_author":            "Funny commenter name",
-			"comment_author_email":      "first.last@gmail.com",
-			"comment_author_url":        "http://blog.domain.com",
-			"comment_content":           "<p>This blog comment contains <strong>bold</strong> and <em>italic</em> text.</p>",
-			"comment_date_gmt":          "2016-04-01T14:00:00Z",
-		},
-		EncodedValues: "blog=http%3A%2F%2Fwww.example.com&comment_author=Funny+commenter+name&comment_author_email=first.last%40gmail.com&comment_author_url=http%3A%2F%2Fblog.domain.com&comment_content=%3Cp%3EThis+blog+comment+contains+%3Cstrong%3Ebold%3C%2Fstrong%3E+and+%3Cem%3Eitalic%3C%2Fem%3E+text.%3C%2Fp%3E&comment_date_gmt=2016-04-01T14%3A00%3A00Z&comment_post_modified_gmt=2016-03-31T23%3A27%3A59Z&comment_type=comment&permalink=http%3A%2F%2Fexample.com%2Fposts%2Fthis-is-a-post%2F&referrer=http%3A%2F%2Fwww.google.com&user_agent=Mozilla%2F5.0+%28X11%3B+Linux+x86_64%29+AppleWebKit%2F537.36+%28KHTML%2C+like+Gecko%29+Chrome%2F41.0.2227.0+Safari%2F537.36&user_ip=127.0.0.1",
-	},
-	{
-		Field: "Site",
-		// NOTE: This should override the default website.
-		Value: "http://www.anothersite.com",
-		Values: map[string]string{
-			"user_ip":                   "127.0.0.1",
-			"user_agent":                "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/41.0.2227.0 Safari/537.36",
-			"referrer":                  "http://www.google.com",
-			"permalink":                 "http://example.com/posts/this-is-a-post/",
-			"comment_post_modified_gmt": "2016-03-31T23:27:59Z",
-			"comment_type":              "comment",
-			"comment_author":            "Funny commenter name",
-			"comment_author_email":      "first.last@gmail.com",
-			"comment_author_url":        "http://blog.domain.com",
-			"comment_content":           "<p>This blog comment contains <strong>bold</strong> and <em>italic</em> text.</p>",
-			"comment_date_gmt":          "2016-04-01T14:00:00Z",
-			"blog":                      "http://www.anothersite.com",
-		},
-		EncodedValues: "blog=http%3A%2F%2Fwww.anothersite.com&comment_author=Funny+commenter+name&comment_author_email=first.last%40gmail.com&comment_author_url=http%3A%2F%2Fblog.domain.com&comment_content=%3Cp%3EThis+blog+comment+contains+%3Cstrong%3Ebold%3C%2Fstrong%3E+and+%3Cem%3Eitalic%3C%2Fem%3E+text.%3C%2Fp%3E&comment_date_gmt=2016-04-01T14%3A00%3A00Z&comment_post_modified_gmt=2016-03-31T23%3A27%3A59Z&comment_type=comment&permalink=http%3A%2F%2Fexample.com%2Fposts%2Fthis-is-a-post%2F&referrer=http%3A%2F%2Fwww.google.com&user_agent=Mozilla%2F5.0+%28X11%3B+Linux+x86_64%29+AppleWebKit%2F537.36+%28KHTML%2C+like+Gecko%29+Chrome%2F41.0.2227.0+Safari%2F537.36&user_ip=127.0.0.1",
-	},
-	{
-		Field: "SiteLanguage",
-		Value: "en_us",
-		Values: map[string]string{
-			"user_ip":                   "127.0.0.1",
-			"user_agent":                "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/41.0.2227.0 Safari/537.36",
-			"referrer":                  "http://www.google.com",
-			"permalink":                 "http://example.com/posts/this-is-a-post/",
-			"comment_post_modified_gmt": "2016-03-31T23:27:59Z",
-			"comment_type":              "comment",
-			"comment_author":            "Funny commenter name",
-			"comment_author_email":      "first.last@gmail.com",
-			"comment_author_url":        "http://blog.domain.com",
-			"comment_content":           "<p>This blog comment contains <strong>bold</strong> and <em>italic</em> text.</p>",
-			"comment_date_gmt":          "2016-04-01T14:00:00Z",
-			"blog":                      "http://www.anothersite.com",
-			"blog_lang":                 "en_us",
-		},
-		EncodedValues: "blog=http%3A%2F%2Fwww.anothersite.com&blog_lang=en_us&comment_author=Funny+commenter+name&comment_author_email=first.last%40gmail.com&comment_author_url=http%3A%2F%2Fblog.domain.com&comment_content=%3Cp%3EThis+blog+comment+contains+%3Cstrong%3Ebold%3C%2Fstrong%3E+and+%3Cem%3Eitalic%3C%2Fem%3E+text.%3C%2Fp%3E&comment_date_gmt=2016-04-01T14%3A00%3A00Z&comment_post_modified_gmt=2016-03-31T23%3A27%3A59Z&comment_type=comment&permalink=http%3A%2F%2Fexample.com%2Fposts%2Fthis-is-a-post%2F&referrer=http%3A%2F%2Fwww.google.com&user_agent=Mozilla%2F5.0+%28X11%3B+Linux+x86_64%29+AppleWebKit%2F537.36+%28KHTML%2C+like+Gecko%29+Chrome%2F41.0.2227.0+Safari%2F537.36&user_ip=127.0.0.1",
-	},
-	{
-		Field: "SiteCharset",
-		Value: "UTF-8",
-		Values: map[string]string{
-			"user_ip":                   "127.0.0.1",
-			"user_agent":                "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/41.0.2227.0 Safari/537.36",
-			"referrer":                  "http://www.google.com",
-			"permalink":                 "http://example.com/posts/this-is-a-post/",
-			"comment_post_modified_gmt": "2016-03-31T23:27:59Z",
-			"comment_type":              "comment",
-			"comment_author":            "Funny commenter name",
-			"comment_author_email":      "first.last@gmail.com",
-			"comment_author_url":        "http://blog.domain.com",
-			"comment_content":           "<p>This blog comment contains <strong>bold</strong> and <em>italic</em> text.</p>",
-			"comment_date_gmt":          "2016-04-01T14:00:00Z",
-			"blog":                      "http://www.anothersite.com",
-			"blog_lang":                 "en_us",
-			"blog_charset":              "UTF-8",
-		},
-		EncodedValues: "blog=http%3A%2F%2Fwww.anothersite.com&blog_charset=UTF-8&blog_lang=en_us&comment_author=Funny+commenter+name&comment_author_email=first.last%40gmail.com&comment_author_url=http%3A%2F%2Fblog.domain.com&comment_content=%3Cp%3EThis+blog+comment+contains+%3Cstrong%3Ebold%3C%2Fstrong%3E+and+%3Cem%3Eitalic%3C%2Fem%3E+text.%3C%2Fp%3E&comment_date_gmt=2016-04-01T14%3A00%3A00Z&comment_post_modified_gmt=2016-03-31T23%3A27%3A59Z&comment_type=comment&permalink=http%3A%2F%2Fexample.com%2Fposts%2Fthis-is-a-post%2F&referrer=http%3A%2F%2Fwww.google.com&user_agent=Mozilla%2F5.0+%28X11%3B+Linux+x86_64%29+AppleWebKit%2F537.36+%28KHTML%2C+like+Gecko%29+Chrome%2F41.0.2227.0+Safari%2F537.36&user_ip=127.0.0.1",
-	},
-}
-
-// TestCommentValues tests the Comment.Values method.
-func TestCommentValues(t *testing.T) {
-
-	comment := &gokismet.Comment{}
-	setter := NewFieldSetter(comment)
-
-	if len(CommentData) != setter.NumFields()+1 {
-		t.Errorf("Not all Comment fields are being tested: expected %d fields, got %d",
-			setter.NumFields()+1, len(CommentData))
-	}
-
-	// Loop through the comment data, setting each field
-	// individually and checking that Comment.Values
-	// returns the expected key-value pairs.
-
-	for i, test := range CommentData {
-
-		if test.Field != "" {
-			if err := setter.Set(test.Field, test.Value); err != nil {
-				t.Errorf("Test %d: %s", i+1, err)
-				continue
-			}
-		}
-
-		errors := compareKeyValuePairs(test.Values, comment.Values())
-		for _, err := range errors {
-			t.Errorf("Test %d: %s", i+1, err)
-		}
-	}
-}
-
-// TestRequestCheckComment tests the Checker.Check request headers.
-func TestRequestCheckComment(t *testing.T) {
-
-	fn := toErrorFunc(fnCheckComment)
-	url := "https://123456789abc.rest.akismet.com/1.1/comment-check"
-
-	testRequest(t, fn, url)
-}
-
-// TestRequestSubmitHam tests the Checker.SubmitHam request headers.
-func TestRequestSubmitHam(t *testing.T) {
-
-	fn := fnSubmitHam
-	url := "https://123456789abc.rest.akismet.com/1.1/submit-ham"
-
-	testRequest(t, fn, url)
-}
-
-// TestRequestSubmitSpam tests the Checker.SubmitSpam request headers.
-func TestRequestSubmitSpam(t *testing.T) {
-
-	fn := fnSubmitSpam
-	url := "https://123456789abc.rest.akismet.com/1.1/submit-spam"
-
-	testRequest(t, fn, url)
-}
-
-// testRequest is a general function for testing the request
-// headers of Checker calls.
-func testRequest(t *testing.T, fn ErrorFunc, url string) {
-
-	// Our client is set up to verify API keys.
-	client := NewVerifyingTestClient()
-
-	// This function checks that we have the expected number
-	// of client requests and that they are well-formed.
-	doTest := func(testnum int, url string, body string, nReqs int, idx int) {
-
-		if len(client.Requests) != nReqs {
-			t.Fatalf("Test %d: Expected %d client request(s), got %d", testnum, nReqs, len(client.Requests))
-		}
-
-		exp := &RequestInfo{
-			Method: "POST",
-			URL:    url,
-			HeaderItems: map[string]string{
-				"Content-Type": "application/x-www-form-urlencoded",
-				"User-Agent":   "Gokismet/3.0",
-			},
-			Body: body,
-		}
-
-		errors := compareRequestInfo(exp, client.Requests[idx])
-		for _, err := range errors {
-			t.Errorf("Test %d: %s", testnum, err)
-		}
-	}
-
-	checker := gokismet.NewCheckerWithClient(TESTAPIKEY, TESTSITE, client)
-
-	// Execute the provided method.
-	// This will be Check, SubmitHam, or SubmitSpam.
-	fn(checker, nil)
-
-	// The first API call should yield two client requests:
-	// one to verify the key and one to make the actual API
-	// call. Check the verify key request first.
-	doTest(0, "https://rest.akismet.com/1.1/verify-key",
-		"blog=http%3A%2F%2Fwww.example.com&key=123456789abc", 2, 0)
-
-	// Then call the provided method again, once for each
-	// item of comment data, and check those requests.
-	for i, test := range CommentData {
-
-		client.ResetRequests()
-		fn(checker, test.Values)
-
-		doTest(i+1, url, test.EncodedValues, 1, 0)
-	}
-}
-
-// A test data type for the TestResponseXXX functions.
-type TestResponseData struct {
-	Responses map[string]*ResponseInfo
-	Status    gokismet.Status
-	Error     error
-}
-
-// TestResponseCheckComment tests the status and error
-// values returned by Checker.Check.
-func TestResponseCheckComment(t *testing.T) {
-
-	// Test scenarios for a spam check.
-	data := []TestResponseData{
-		{
-			// Invalid HTTP status.
-			Responses: map[string]*ResponseInfo{
-				"verify-key": {
-					Body:   "valid",
-					Status: http.StatusOK,
-				},
-				"comment-check": {
-					Status: http.StatusInternalServerError,
-				},
-			},
-			Error: &gokismet.Error{
-				Action:   gokismet.Check,
-				Response: "Status 500 Internal Server Error",
-			},
-		},
-		{
-			// Negative spam response.
-			Responses: map[string]*ResponseInfo{
-				"verify-key": {
-					Body:   "valid",
-					Status: http.StatusOK,
-				},
-				"comment-check": {
-					Body:   "false",
-					Status: http.StatusOK,
-				},
-			},
-			Status: gokismet.StatusOK,
-		},
-		{
-			// Positive spam response.
-			Responses: map[string]*ResponseInfo{
-				"verify-key": {
-					Body:   "valid",
-					Status: http.StatusOK,
-				},
-				"comment-check": {
-					Body:   "true",
-					Status: http.StatusOK,
-				},
-			},
-			Status: gokismet.StatusSpam,
-		},
-		{
-			// Pervasive spam response.
-			Responses: map[string]*ResponseInfo{
-				"verify-key": {
-					Body:   "valid",
-					Status: http.StatusOK,
-				},
-				"comment-check": {
-					Body:   "true",
-					Status: http.StatusOK,
-					HeaderItems: map[string]string{
-						"X-akismet-pro-tip": "discard",
-					},
-				},
-			},
-			Status: gokismet.StatusBlatantSpam,
-		},
-		{
-			// Error response.
-			Responses: map[string]*ResponseInfo{
-				"verify-key": {
-					Body:   "valid",
-					Status: http.StatusOK,
-				},
-				"comment-check": {
-					Body:   "invalid",
-					Status: http.StatusOK,
-				},
-			},
-			Error: &gokismet.Error{
-				Action:   gokismet.Check,
-				Response: "invalid",
-			},
-		},
-		{
-			// Error response with help message.
-			Responses: map[string]*ResponseInfo{
-				"verify-key": {
-					Body:   "valid",
-					Status: http.StatusOK,
-				},
-				"comment-check": {
-					Body:   "invalid",
-					Status: http.StatusOK,
-					HeaderItems: map[string]string{
-						"X-akismet-debug-help": "A helpful diagnostic message",
-					},
-				},
-			},
-			Error: &gokismet.Error{
-				Action:   gokismet.Check,
-				Response: "invalid",
-				Hint:     "A helpful diagnostic message",
-			},
-		},
-	}
-
-	testResponse(t, fnCheckComment, data)
-}
-
-// TestResponseSubmitHam tests the error values returned
-// by Checker.SubmitHam.
-func TestResponseSubmitHam(t *testing.T) {
-
-	op := gokismet.SubmitHam
-	submit := fnSubmitHam
-	command := "submit-ham"
-
-	testResponseSubmit(t, op, command, submit)
-}
-
-// TestResponseSubmitSpam tests the error values returned
-// by Checker.SubmitSpam.
-func TestResponseSubmitSpam(t *testing.T) {
-
-	op := gokismet.SubmitSpam
-	submit := fnSubmitSpam
-	command := "submit-spam"
-
-	testResponseSubmit(t, op, command, submit)
-}
-
-// testResponseSubmit is a helper for TestResponseSubmitHam
-// and TestResponseSubmitSpam.
-func testResponseSubmit(t *testing.T, op gokismet.Action, command string, submit ErrorFunc) {
-
-	// Test scenarios for the submit Checker calls.
-	data := []TestResponseData{
-		{
-			// Invalid HTTP status.
-			Responses: map[string]*ResponseInfo{
-				"verify-key": {
-					Body:   "valid",
-					Status: http.StatusOK,
-				},
-				command: {
-					Status: http.StatusInternalServerError,
-				},
-			},
-			Error: &gokismet.Error{
-				Action:   op,
-				Response: "Status 500 Internal Server Error",
-			},
-		},
-		{
-			// Success response.
-			Responses: map[string]*ResponseInfo{
-				"verify-key": {
-					Body:   "valid",
-					Status: http.StatusOK,
-				},
-				command: {
-					Body:   "Thanks for making the web a better place.",
-					Status: http.StatusOK,
-				},
-			},
-		},
-		{
-			// Error response.
-			Responses: map[string]*ResponseInfo{
-				"verify-key": {
-					Body:   "valid",
-					Status: http.StatusOK,
-				},
-				command: {
-					Body:   "invalid",
-					Status: http.StatusOK,
-				},
-			},
-			Error: &gokismet.Error{
-				Action:   op,
-				Response: "invalid",
-			},
-		},
-		{
-			// Error response with help message.
-			Responses: map[string]*ResponseInfo{
-				"verify-key": {
-					Body:   "valid",
-					Status: http.StatusOK,
-				},
-				command: {
-					Body:   "invalid",
-					Status: http.StatusOK,
-					HeaderItems: map[string]string{
-						"X-akismet-debug-help": "A helpful diagnostic message",
-					},
-				},
-			},
-			Error: &gokismet.Error{
-				Action:   op,
-				Response: "invalid",
-				Hint:     "A helpful diagnostic message",
-			},
-		},
-	}
-
-	testResponse(t, toStatusErrorFunc(submit), data)
-}
-
-// testResponse is a general function for testing the statuses
-// and errors returned by Checker calls.
-func testResponse(t *testing.T, fn StatusErrorFunc, moredata []TestResponseData) {
-
-	// Test scenarios for all Checker calls.
-	data := []TestResponseData{
-		{
-			// Error during key verification.
-			Error: &TestClientError{
-				Command: "verify-key",
-			},
-		},
-		{
-			// Key not verified.
-			Responses: map[string]*ResponseInfo{
-				"verify-key": {
-					Body:   "invalid",
-					Status: http.StatusOK,
-				},
-			},
-			Error: &gokismet.AuthError{
-				Key:      "123456789abc",
-				Site:     "http://www.example.com",
-				Response: "invalid",
-			},
-		},
-		{
-			// Key not verified with help message.
-			Responses: map[string]*ResponseInfo{
-				"verify-key": {
-					Body:   "invalid",
-					Status: http.StatusOK,
-					HeaderItems: map[string]string{
-						"X-akismet-debug-help": "A helpful diagnostic message",
-					},
-				},
-			},
-			Error: &gokismet.AuthError{
-				Key:      "123456789abc",
-				Site:     "http://www.example.com",
-				Response: "invalid",
-				Hint:     "A helpful diagnostic message",
-			},
-		},
-		{
-			// Invalid HTTP status.
-			Responses: map[string]*ResponseInfo{
-				"verify-key": {
-					Status: http.StatusMovedPermanently,
-				},
-			},
-			Error: &gokismet.Error{
-				Action:   gokismet.Authenticate,
-				Response: "Status 301 Moved Permanently",
-			},
-		},
-		{
-			// Invalid HTTP status with help message.
-			Responses: map[string]*ResponseInfo{
-				"verify-key": {
-					Status: http.StatusNotFound,
-					HeaderItems: map[string]string{
-						"X-akismet-debug-help": "A helpful diagnostic message",
-					},
-				},
-			},
-			Error: &gokismet.Error{
-				Action:   gokismet.Authenticate,
-				Response: "Status 404 Not Found",
-				Hint:     "A helpful diagnostic message",
-			},
-		},
-	}
-
-	// Add method-specific test scenarios.
-	data = append(data, moredata...)
-
-	for i, test := range data {
-
-		client := &TestClient{
-			Responses: test.Responses,
-		}
-
-		checker := gokismet.NewCheckerWithClient(TESTAPIKEY, TESTSITE, client)
-		status, err := fn(checker, nil)
-
-		if status != test.Status {
-			t.Errorf("Test %d: Expected Spam Status %q, got %q", i+1,
-				statusToString(test.Status), statusToString(status))
-		}
-
-		errors := compareError(test.Error, err)
-		for _, err := range errors {
-			t.Errorf("Test %d: %s", i+1, err)
-		}
-	}
-}
-
-// TestWrapClientCheckComment tests custom HTTP headers
-// in Checker.Check calls.
-func TestWrapClientCheckComment(t *testing.T) {
-	testWrapClient(t, toErrorFunc(fnCheckComment))
-}
-
-// TestWrapClientSubmitHam tests custom HTTP headers
-// in Checker.SubmitHam calls.
-func TestWrapClientSubmitHam(t *testing.T) {
-	testWrapClient(t, fnSubmitHam)
-}
-
-// TestWrapClientSubmitSpam tests custom HTTP headers
-// in Checker.SubmitSpam calls.
-func TestWrapClientSubmitSpam(t *testing.T) {
-	testWrapClient(t, fnSubmitSpam)
-}
-
-// testWrapClient tests that WrapClient injects the
-// expected custom headers into HTTP requests.
-func testWrapClient(t *testing.T, fn ErrorFunc) {
-
-	data := []struct {
-		Wrappers []map[string]string
-		Expected map[string]string
-	}{
-		{
-			// Default headers.
-			Expected: map[string]string{
-				"Content-Type": "application/x-www-form-urlencoded",
-				"User-Agent":   "Gokismet/3.0",
-			},
-		},
-		{
-			// Single wrapper.
-			Wrappers: []map[string]string{
-				map[string]string{
-					"From":          "first.last@gmail.com",
-					"Cache-Control": "no-cache",
-				},
-			},
-			Expected: map[string]string{
-				"Content-Type":  "application/x-www-form-urlencoded",
-				"User-Agent":    "Gokismet/3.0",
-				"From":          "first.last@gmail.com",
-				"Cache-Control": "no-cache",
-			},
-		},
-		{
-			// Multiple wrappers.
-			Wrappers: []map[string]string{
-				map[string]string{
-					"From": "first.last@gmail.com",
-				},
-				map[string]string{
-					"Cache-Control": "no-cache",
-				},
-			},
-			Expected: map[string]string{
-				"Content-Type":  "application/x-www-form-urlencoded",
-				"User-Agent":    "Gokismet/3.0",
-				"From":          "first.last@gmail.com",
-				"Cache-Control": "no-cache",
-			},
-		},
-		{
-			// Overwrite defaults.
-			Wrappers: []map[string]string{
-				map[string]string{
-					"From": "first.last@gmail.com",
-				},
-				map[string]string{
-					"Cache-Control": "no-cache",
-				},
-				map[string]string{
-					"User-Agent": "GokismetTest/1.0 | " + gokismet.UA,
-				},
-			},
-			Expected: map[string]string{
-				"Content-Type":  "application/x-www-form-urlencoded",
-				"User-Agent":    "GokismetTest/1.0 | Gokismet/3.0",
-				"From":          "first.last@gmail.com",
-				"Cache-Control": "no-cache",
-			},
-		},
-	}
-
-	for i, test := range data {
-
-		client := NewVerifyingTestClient()
-
-		var wclient gokismet.Client = client
-		for _, headers := range test.Wrappers {
-			wclient = gokismet.WrapClient(wclient, headers)
-		}
-
-		checker := gokismet.NewCheckerWithClient(TESTAPIKEY, TESTSITE, wclient)
-		fn(checker, nil)
-
-		// We expect 2 client requests: one for key verification and
-		// one for the actual API call.
-		if len(client.Requests) != 2 {
-			t.Fatalf("Test %d: Expected 2 client requests, got %d", i+1, len(client.Requests))
-		}
-
-		// Both requests should have custom HTTP headers. Test both.
-		for j, req := range client.Requests {
-			errors := compareKeyValuePairs(test.Expected, req.HeaderItems)
-			for _, err := range errors {
-				t.Errorf("Test %d, Request %d: %s", i+1, j+1, err)
-			}
-		}
-	}
-}
-
-// TestErrorString tests string formatting for the
-// Error type (mainly just for code coverage).
-func TestErrorString(t *testing.T) {
-
-	data := []struct {
-		Action   gokismet.Action
-		Response string
-		Hint     string
-		Expected string
-	}{
-		{
-			Action:   gokismet.Authenticate,
-			Expected: `Akismet returned an empty string`,
-		},
-		{
-			Action:   gokismet.Authenticate,
-			Hint:     "A helpful diagnostic message",
-			Expected: `Akismet returned an empty string (A helpful diagnostic message)`,
-		},
-		{
-			Action:   gokismet.Authenticate,
-			Response: "invalid",
-			Expected: `Akismet returned "invalid"`,
-		},
-		{
-			Action:   gokismet.Authenticate,
-			Response: "invalid",
-			Hint:     "A helpful diagnostic message",
-			Expected: `Akismet returned "invalid" (A helpful diagnostic message)`,
-		},
-		{
-			Action:   gokismet.Check,
-			Expected: `Check Comment returned an empty string`,
-		},
-		{
-			Action:   gokismet.Check,
-			Hint:     "A helpful diagnostic message",
-			Expected: `Check Comment returned an empty string (A helpful diagnostic message)`,
-		},
-		{
-			Action:   gokismet.Check,
-			Response: "invalid",
-			Expected: `Check Comment returned "invalid"`,
-		},
-		{
-			Action:   gokismet.Check,
-			Response: "invalid",
-			Hint:     "A helpful diagnostic message",
-			Expected: `Check Comment returned "invalid" (A helpful diagnostic message)`,
-		},
-		{
-			Action:   gokismet.SubmitHam,
-			Expected: `Submit Ham returned an empty string`,
-		},
-		{
-			Action:   gokismet.SubmitHam,
-			Hint:     "A helpful diagnostic message",
-			Expected: `Submit Ham returned an empty string (A helpful diagnostic message)`,
-		},
-		{
-			Action:   gokismet.SubmitHam,
-			Response: "invalid",
-			Expected: `Submit Ham returned "invalid"`,
-		},
-		{
-			Action:   gokismet.SubmitHam,
-			Response: "invalid",
-			Hint:     "A helpful diagnostic message",
-			Expected: `Submit Ham returned "invalid" (A helpful diagnostic message)`,
-		},
-		{
-			Action:   gokismet.SubmitSpam,
-			Expected: `Submit Spam returned an empty string`,
-		},
-		{
-			Action:   gokismet.SubmitSpam,
-			Hint:     "A helpful diagnostic message",
-			Expected: `Submit Spam returned an empty string (A helpful diagnostic message)`,
-		},
-		{
-			Action:   gokismet.SubmitSpam,
-			Response: "invalid",
-			Expected: `Submit Spam returned "invalid"`,
-		},
-		{
-			Action:   gokismet.SubmitSpam,
-			Response: "invalid",
-			Hint:     "A helpful diagnostic message",
-			Expected: `Submit Spam returned "invalid" (A helpful diagnostic message)`,
-		},
-	}
-
-	for i, test := range data {
-
-		err := &gokismet.Error{
-			Action:   test.Action,
-			Response: test.Response,
-			Hint:     test.Hint,
-		}
-
-		if got := err.Error(); got != test.Expected {
-			t.Errorf("Test %d: Expected error %q, got %q", i+1, test.Expected, got)
-		}
-	}
-}
-
-// TestAuthErrorString tests string formatting for the
-// AuthError type (mainly just for code coverage).
-func TestAuthErrorString(t *testing.T) {
-
-	data := []struct {
-		Key      string
-		Site     string
-		Response string
-		Hint     string
-		Error    string
-	}{
-		{
-			Key:      TESTAPIKEY,
-			Site:     TESTSITE,
-			Response: "invalid",
-			Error:    `Akismet failed to verify key "123456789abc" for site "http://www.example.com"`,
-		},
-		{
-			Key:      TESTAPIKEY,
-			Site:     TESTSITE,
-			Response: "invalid",
-			Hint:     "A helpful diagnostic message",
-			Error:    `Akismet failed to verify key "123456789abc" for site "http://www.example.com" (A helpful diagnostic message)`,
-		},
-	}
-
-	for i, test := range data {
-
-		err := &gokismet.AuthError{
-			Key:      test.Key,
-			Site:     test.Site,
-			Response: test.Response,
-			Hint:     test.Hint,
-		}
-
-		if msg := err.Error(); msg != test.Error {
-			t.Errorf("Test %d: Expected AuthError %q, got %q", i+1, test.Error, msg)
-		}
-	}
 }
