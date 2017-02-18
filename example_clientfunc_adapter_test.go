@@ -1,3 +1,9 @@
+// NOTE: This code example uses the Context package, introduced
+// in Go 1.7. To prevent older versions of Go choking on the
+// Context code, this file is excluded from pre-1.7 builds.
+
+// +build go1.7
+
 package gokismet_test
 
 import (
