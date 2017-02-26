@@ -1,21 +1,17 @@
-// NOTE: This code example uses the Context package, introduced
-// in Go 1.7. To prevent older versions of Go choking on the
-// Context code, this file is excluded from pre-1.7 builds.
-
-// +build go1.7
-
 package gokismet_test
 
 import (
-	"context"
 	"fmt"
+	"io"
 	"net/http"
+	"net/http/httputil"
+	"os"
 
 	"github.com/deepilla/gokismet"
 )
 
-// An Adapter is a function that takes and returns a Client.
-// It's used to add functionality to an existing Client.
+// An Adapter is a function that takes an existing Client
+// and supplements it with additional functionality.
 type Adapter func(gokismet.Client) gokismet.Client
 
 // adapt applies a series of Adapters to an existing Client.
@@ -26,8 +22,8 @@ func adapt(client gokismet.Client, adapters ...Adapter) gokismet.Client {
 	return client
 }
 
-// withHeader returns an Adapter that sets a header on the
-// outgoing HTTP request before executing it.
+// withHeader returns an Adapter that sets a custom header
+// on outgoing HTTP requests before executing them.
 func withHeader(key, value string) Adapter {
 	return func(client gokismet.Client) gokismet.Client {
 		return gokismet.ClientFunc(func(req *http.Request) (*http.Response, error) {
@@ -37,13 +33,23 @@ func withHeader(key, value string) Adapter {
 	}
 }
 
-// withContext returns an Adapter that sets a context value
-// on the outgoing HTTP request before executing it.
-func withContext(key, value string) Adapter {
+// withRequestWriter returns an Adapter that logs outgoing
+// HTTP requests to a Writer before executing them.
+func withRequestWriter(writer io.Writer) Adapter {
 	return func(client gokismet.Client) gokismet.Client {
 		return gokismet.ClientFunc(func(req *http.Request) (*http.Response, error) {
-			ctx := context.WithValue(req.Context(), key, value)
-			return client.Do(req.WithContext(ctx))
+
+			buf, err := httputil.DumpRequestOut(req, true)
+			if err != nil {
+				return nil, err
+			}
+
+			_, err = writer.Write(buf)
+			if err != nil {
+				return nil, err
+			}
+
+			return client.Do(req)
 		})
 	}
 }
@@ -51,22 +57,22 @@ func withContext(key, value string) Adapter {
 func ExampleClientFunc_adapter() {
 
 	comment := gokismet.Comment{
-	// comment data goes here
+	// Content goes here...
 	}
 
-	// Create a custom Client that modifies the headers
-	// and context values of outgoing HTTP requests.
+	// Create a Client that adds custom headers and logging
+	// to outgoing HTTP requests.
 	client := adapt(http.DefaultClient,
+		withRequestWriter(os.Stdout),
 		withHeader("User-Agent", "MyApplication/1.0 | "+gokismet.UserAgent),
 		withHeader("Cache-Control", "no-cache"),
-		withContext("SessionID", "6543210"),
 	)
 
 	// Create a Checker that uses the Client.
-	ch := gokismet.NewCheckerClient("YOUR-API-KEY", "http://example.com", client)
+	ch := gokismet.NewCheckerClient("YOUR-API-KEY", "http://your-website.com", client)
 
 	// The Checker's HTTP requests now include the custom
-	// headers and context values.
+	// headers and are written to stdout.
 	status, err := ch.Check(comment.Values())
 
 	fmt.Println(status, err)

@@ -8,13 +8,13 @@ import (
 )
 
 func ExampleChecker_Check() {
-	// Comment data defined as key-value pairs. See the Akismet
-	// docs for a list of valid keys. Or better still, use the
-	// Comment type instead.
+	// This example defines content as a map of key-value pairs
+	// (see the Akismet docs for a list of valid keys). Gokismet
+	// also provides a Comment type that generates this map for you.
 	values := map[string]string{
 		"user_ip":                   "127.0.0.1",
 		"user_agent":                "Mozilla/5.0 (Windows; U; Windows NT 6.1; en-US; rv:1.9.2) Gecko/20100115 Firefox/3.6",
-		"permalink":                 "http://example.com/posts/feliz-cinco-de-mayo/",
+		"permalink":                 "http://your-website.com/posts/feliz-cinco-de-mayo/",
 		"comment_post_modified_gmt": "2016-05-05T10:30:00Z",
 		"comment_author":            "A. Commenter",
 		"comment_author_email":      "acommenter@aol.com",
@@ -22,27 +22,27 @@ func ExampleChecker_Check() {
 		// etc...
 	}
 
-	ch := gokismet.NewChecker("YOUR-API-KEY", "http://example.com")
+	ch := gokismet.NewChecker("YOUR-API-KEY", "http://your-website.com")
 
 	status, err := ch.Check(values)
 
 	switch status {
 	case gokismet.StatusHam:
-		fmt.Println("Comment is legit")
+		fmt.Println("This is legit content")
 	case gokismet.StatusProbableSpam, gokismet.StatusDefiniteSpam:
-		fmt.Println("Comment is spam")
+		fmt.Println("This is spam")
 	case gokismet.StatusUnknown:
 		fmt.Println("Something went wrong:", err)
 	}
 }
 
 func ExampleChecker_Check_comment() {
-	// Comment data defined with the Comment type. This is less
-	// error-prone than using a map.
+	// This example uses the Comment type to define content.
+	// You can also use a map of key-value pairs.
 	comment := gokismet.Comment{
 		UserIP:        "127.0.0.1",
 		UserAgent:     "Mozilla/5.0 (Windows; U; Windows NT 6.1; en-US; rv:1.9.2) Gecko/20100115 Firefox/3.6",
-		Page:          "http://example.com/posts/feliz-cinco-de-mayo/",
+		Page:          "http://your-website.com/posts/feliz-cinco-de-mayo/",
 		PageTimestamp: time.Date(2016, time.May, 5, 10, 30, 0, 0, time.UTC),
 		Author:        "A. Commenter",
 		AuthorEmail:   "acommenter@aol.com",
@@ -50,15 +50,15 @@ func ExampleChecker_Check_comment() {
 		// etc...
 	}
 
-	ch := gokismet.NewChecker("YOUR-API-KEY", "http://example.com")
+	ch := gokismet.NewChecker("YOUR-API-KEY", "http://your-website.com")
 
 	status, err := ch.Check(comment.Values())
 
 	switch status {
 	case gokismet.StatusHam:
-		fmt.Println("Comment is legit")
+		fmt.Println("This is legit content")
 	case gokismet.StatusProbableSpam, gokismet.StatusDefiniteSpam:
-		fmt.Println("Comment is spam")
+		fmt.Println("This is spam")
 	case gokismet.StatusUnknown:
 		fmt.Println("Something went wrong:", err)
 	}

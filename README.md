@@ -11,17 +11,7 @@ Use gokismet to:
 1. Check comments, forum posts, and other user-generated content for spam.
 
 2. Notify Akismet of false positives (legitimate content incorrectly flagged
-as spam) and false negatives (spam content that it failed to detect).
-
-## Documentation
-
-See [gokismet on GoDoc](https://godoc.org/github.com/deepilla/gokismet) for detailed docs on this library.
-
-For background on Akismet, see:
-
-- [Akismet API docs](https://akismet.com/development/api/#detailed-docs)
-- [The two types of spam in Akismet](https://blog.akismet.com/2014/04/23/theres-a-ninja-in-your-akismet/ "There's a ninja in your Akismet")
-- [Comment types in Akismet](https://blog.akismet.com/2012/06/19/pro-tip-tell-us-your-comment_type/ "Pro Tip: Tell us your comment type")
+as spam) and false negatives (spam that it failed to detect).
 
 ## Installation
 
@@ -37,15 +27,16 @@ import "github.com/deepilla/gokismet"
 
 ### Checking for spam
 
-To check content for spam, call the `NewChecker` function to create an instance of the `Checker` type. Then call its `Check` method, passing in the content as a map of key-value pairs.
+To check content for spam, first call the `NewChecker` function to create an instance of the `Checker` type. Then call its `Check` method, passing in the content as a map of key-value pairs.
 
 ```go
-ch := gokismet.NewChecker("YOUR-API-KEY", "http://example.com")
-
+// Define some content. This example uses the Comment
+// type but you can also use a map of key-value pairs.
+// See the Akismet docs for the list of valid keys.
 comment := gokismet.Comment{
     UserIP:        "127.0.0.1",
     UserAgent:     "Mozilla/5.0 (Windows; U; Windows NT 6.1; en-US; rv:1.9.2) Gecko/20100115 Firefox/3.6",
-    Page:          "http://example.com/posts/feliz-cinco-de-mayo/",
+    Page:          "http://your-website.com/posts/feliz-cinco-de-mayo/",
     PageTimestamp: time.Date(2016, time.May, 5, 10, 30, 0, 0, time.UTC),
     Author:        "A. Commenter",
     AuthorEmail:   "acommenter@aol.com",
@@ -53,23 +44,37 @@ comment := gokismet.Comment{
     // etc...
 }
 
+// Create a Checker, specifying your Akismet API key
+// and the homepage URL of your website.
+ch := gokismet.NewChecker("YOUR-API-KEY", "http://your-website.com")
+
+// Call the Check method, passing in your content.
 status, err := ch.Check(comment.Values())
 
+// Handle the results.
 switch status {
 case gokismet.StatusHam:
-    fmt.Println("Comment is legit")
+    fmt.Println("This is legit content")
 case gokismet.StatusProbableSpam, gokismet.StatusDefiniteSpam:
-    fmt.Println("Comment is spam")
+    fmt.Println("This is spam")
 case gokismet.StatusUnknown:
     fmt.Println("Something went wrong:", err)
 }
 ```
 
-**Note**: The `Comment` type is optional. You can also declare your content as a map of strings to strings. But using a `Comment` is more convenient as you don't have to know the Akismet key names.
-
 ### Reporting errors
 
-If `Check` flags some legitimate content as spam or misses some spam, you can report the error to Akismet using the Checker's `ReportHam` or `ReportSpam` methods. The steps are the same as for a spam check.
+Akismet may occasionally get things wrong, either by flagging legitimate content as spam or failing to identify spam. You can report these errors to Akismet with the `ReportHam` and `ReportSpam` methods. The process is the same as for the Check method: create a `Checker`, then call the relevant method, passing in the content as key-value pairs.
+
+## Further Reading
+
+For detailed documentation on this package, see [gokismet on GoDoc](https://godoc.org/github.com/deepilla/gokismet).
+
+For background on Akismet, see:
+
+- [Akismet API docs](https://akismet.com/development/api/#detailed-docs)
+- [Types of spam in Akismet](https://blog.akismet.com/2014/04/23/theres-a-ninja-in-your-akismet/)
+- [Comment types in Akismet](https://blog.akismet.com/2012/06/19/pro-tip-tell-us-your-comment_type/)
 
 ## Licensing
 

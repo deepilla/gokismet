@@ -7,6 +7,8 @@ Use gokismet to:
 
 2. Notify Akismet of false positives (legitimate content incorrectly flagged
 as spam) and false negatives (spam content that it failed to detect).
+
+For background on the Akismet API, see https://akismet.com/development/api/#detailed-docs.
 */
 package gokismet
 
@@ -47,7 +49,7 @@ const (
 )
 
 // Expected Akismet return values. Any other values
-// generate a ValError (or a KeyError).
+// trigger a gokismet error.
 const (
 	responseVerified = "valid"
 	responseHam      = "false"
@@ -71,32 +73,37 @@ const proTipDiscard = "discard"
 // for an example).
 const UserAgent = "Gokismet/3.0"
 
-// A SpamStatus is the result of a spam check.
+// A SpamStatus is the result of a spam check. It represents
+// Akismet's opinion on the spaminess of your content.
 type SpamStatus uint32
 
+// Note that there are two statuses for spam. They correspond to
+// the two types of spam in Akismet.
 // See https://blog.akismet.com/2014/04/23/theres-a-ninja-in-your-akismet/
-// for more on the two types of spam in Akismet.
+// for details.
 const (
-	// An error occurred during the spam check.
+	// StatusUnknown means that an error occurred during
+	// the spam check.
 	StatusUnknown SpamStatus = iota
 
-	// Akismet thinks this is legitimate content.
+	// StatusHam means that Akismet did not detect spam
+	// in your content.
 	StatusHam
 
-	// Akismet thinks this is spam. But ham can occasionally
-	// slip through the cracks. Consider reviewing the content
-	// before permanently deleting it.
+	// StatusProbableSpam means that Akismet thinks your
+	// content is spam. But consider reviewing it before
+	// permanently deleting.
 	StatusProbableSpam
 
-	// Akismet is 100% certain this is spam. It's safe to
-	// delete this content without reviewing it.
+	// StatusDefiniteSpam means that Akismet is certain
+	// your content is spam. It can be deleted without
+	// review.
 	StatusDefiniteSpam
 )
 
-// A Client executes an HTTP request and returns an HTTP response.
-// Its interface is satisfied by the standard library's http.Client.
-// Provide your own implementation to intercept gokismet's requests
-// and responses.
+// A Client executes an HTTP request and returns a response.
+// Its interface is satisfied by http.Client. Provide your own
+// implementation to intercept gokismet's requests and responses.
 type Client interface {
 	Do(req *http.Request) (*http.Response, error)
 }
@@ -120,18 +127,22 @@ type Checker struct {
 	verified bool
 }
 
-// NewChecker returns a Checker that uses the default HTTP
-// client. The API key and website are verified with Akismet
-// on the first call to Check, ReportHam or ReportSpam.
+// NewChecker returns a Checker that uses the given API key
+// and website as credentials for the Akismet service. These
+// credentials are verified automatically on the first call
+// to any of the Checker methods.
+//
+// Checkers created with NewChecker use the default HTTP
+// client to make calls to the Akismet API. To provide your
+// own Client, use the NewCheckerClient function.
 func NewChecker(key string, site string) *Checker {
 	return NewCheckerClient(key, site, nil)
 }
 
-// NewCheckerClient returns a Checker that uses the provided
-// Client for HTTP requests. If the Client is nil, the default
-// HTTP client is used instead. The API key and website are
-// verified with Akismet on the first call to Check, ReportHam
-// or ReportSpam.
+// NewCheckerClient is like NewChecker except the returned
+// Checker uses the provided Client to make calls to the
+// Akismet API. If the provided Client is nil, the default
+// HTTP client is used instead.
 func NewCheckerClient(key string, site string, client Client) *Checker {
 
 	if client == nil {
@@ -146,8 +157,15 @@ func NewCheckerClient(key string, site string, client Client) *Checker {
 }
 
 // Check takes content in the form of key-value pairs and
-// checks it for spam. If an error occurs the returned spam
-// status is StatusUnknown.
+// checks it for spam. If an error occurs, Check returns
+// StatusUnknown and a non-nil error.
+//
+// The key-value pairs can either be constructed manually
+// (see the Akismet docs for a list of valid keys) or
+// generated with the Comment type. Either way, it's
+// important to set as many values as possible. The more
+// data Akismet has to work with, the faster and more
+// accurate its spam detection.
 func (ch *Checker) Check(values map[string]string) (SpamStatus, error) {
 
 	if !ch.verified {
@@ -218,8 +236,7 @@ func (ch *Checker) report(method string, values map[string]string) error {
 	return nil
 }
 
-// verify authenticates the Akismet API key and website
-// passed to NewChecker or NewCheckerClient.
+// verify authenticates a Checker's API key and website.
 func (ch *Checker) verify() error {
 
 	// The verify-key endpoint is not qualified with the API
@@ -290,7 +307,7 @@ func buildURL(method string, key string) string {
 	return u.String()
 }
 
-// newRequest creates an HTTP Request from the provided
+// newRequest creates an HTTP Request from the given
 // endpoint URL and query parameters.
 func newRequest(url string, params map[string]string) (*http.Request, error) {
 
@@ -299,7 +316,6 @@ func newRequest(url string, params map[string]string) (*http.Request, error) {
 		return nil, err
 	}
 
-	// Default HTTP headers.
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	req.Header.Set("User-Agent", UserAgent)
 
@@ -307,7 +323,7 @@ func newRequest(url string, params map[string]string) (*http.Request, error) {
 }
 
 // encodeParams converts key-value pairs into a URL-encoded
-// query string, ready to be passed to Akismet.
+// query string suitable for use in an HTTP request.
 func encodeParams(params map[string]string) string {
 
 	values := url.Values{}
@@ -345,14 +361,14 @@ func mergeStringMaps(maps ...map[string]string) map[string]string {
 	return values
 }
 
-// A ValError is returned by the Checker methods if Akismet
-// returns an unexpected response. Usually this indicates a
-// problem with the API call such as a required field not
-// being set.
+// A ValError is an error returned by the Checker methods.
+// It means that Akismet returned an unexpected response.
+// Typically this indicates a problem with the data sent
+// to Akismet, e.g. a required value not being set.
 type ValError struct {
 	// The Akismet method being called.
 	Method string
-	// The return value from Akismet.
+	// The value returned from Akismet.
 	Response string
 	// Any additional error info from Akismet (may be empty).
 	Hint string
@@ -393,14 +409,14 @@ func (e ValError) Error() string {
 	return s
 }
 
-// A KeyError is returned by the Checker methods if Akismet
-// fails to verify an API key.
+// A KeyError is an error returned by the Checker methods.
+// It means that Akismet failed to verify an API key.
 type KeyError struct {
 	// The API key being verified.
 	Key string
-	// Website associated with the API key.
+	// The website associated with the API key.
 	Site string
-	// Details of the Akismet return value.
+	// Details of the response from Akismet.
 	*ValError
 }
 
@@ -419,11 +435,9 @@ func (e KeyError) Error() string {
 // A Comment represents a chunk of content to be checked
 // for spam, such as a blog comment or forum post.
 //
-// According to the Akismet docs, the only required fields
-// are Site, UserIP and UserAgent. But it's important to
-// set as many fields as possible. The more data Akismet
-// has to work with, the faster and more accurate its spam
-// detection.
+// The Comment type provides a convenient way to generate
+// key-value pairs for the Checker methods. Its use is
+// optional.
 type Comment struct {
 
 	// Homepage URL of the website being commented on.
@@ -475,8 +489,8 @@ type Comment struct {
 	SiteCharset string
 }
 
-// Values returns a Comment's data as a map of key-value pairs
-// (for use with the Checker methods).
+// Values returns a Comment's data as a map of key-value
+// pairs, suitable for use with the Checker methods.
 func (c *Comment) Values() map[string]string {
 
 	insert := func(dst map[string]string, key, value string) map[string]string {
