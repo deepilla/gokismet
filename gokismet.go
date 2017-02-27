@@ -503,33 +503,31 @@ func (c *Comment) Values() map[string]string {
 		return dst
 	}
 
+	insertTime := func(dst map[string]string, key string, value time.Time) map[string]string {
+		if value.IsZero() {
+			return dst
+		}
+		// Akismet requires UTC time in ISO 8601 format, e.g.
+		// "2016-04-18T09:30:59Z".
+		return insert(dst, key, value.UTC().Format(time.RFC3339))
+	}
+
 	var m map[string]string
 
 	m = insert(m, paramUserIP, c.UserIP)
 	m = insert(m, paramUserAgent, c.UserAgent)
 	m = insert(m, paramReferer, c.Referer)
 	m = insert(m, paramPage, c.Page)
-	m = insert(m, paramPageTimestamp, formatTime(c.PageTimestamp))
+	m = insertTime(m, paramPageTimestamp, c.PageTimestamp)
 	m = insert(m, paramType, c.Type)
 	m = insert(m, paramAuthor, c.Author)
 	m = insert(m, paramAuthorEmail, c.AuthorEmail)
 	m = insert(m, paramAuthorSite, c.AuthorSite)
 	m = insert(m, paramContent, c.Content)
-	m = insert(m, paramTimestamp, formatTime(c.Timestamp))
+	m = insertTime(m, paramTimestamp, c.Timestamp)
 	m = insert(m, paramSite, c.Site)
 	m = insert(m, paramSiteCharset, c.SiteCharset)
 	m = insert(m, paramSiteLanguage, c.SiteLanguage)
 
 	return m
-}
-
-func formatTime(t time.Time) string {
-
-	if t.IsZero() {
-		return ""
-	}
-
-	// Akismet requires UTC time in ISO 8601 format, e.g.
-	// "2016-04-18T09:30:59Z".
-	return t.UTC().Format(time.RFC3339)
 }
