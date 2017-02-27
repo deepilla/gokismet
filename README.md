@@ -30,9 +30,10 @@ import "github.com/deepilla/gokismet"
 To check content for spam, first call the `NewChecker` function to create an instance of the `Checker` type. Then call its `Check` method, passing in the content as a map of key-value pairs.
 
 ```go
-// Define some content. This example uses the Comment
-// type but you can also use a map of key-value pairs.
-// See the Akismet docs for the list of valid keys.
+// Define your content. This example uses the Comment
+// type to generate its key-value pairs but you can
+// also build the map manually (see the Akismet docs
+// for the list of valid keys).
 comment := gokismet.Comment{
     UserIP:        "127.0.0.1",
     UserAgent:     "Mozilla/5.0 (Windows; U; Windows NT 6.1; en-US; rv:1.9.2) Gecko/20100115 Firefox/3.6",
@@ -64,7 +65,9 @@ case gokismet.StatusUnknown:
 
 ### Reporting errors
 
-Akismet may occasionally get things wrong, either by flagging legitimate content as spam or failing to identify spam. You can report these errors to Akismet with the `ReportHam` and `ReportSpam` methods. The process is the same as for the Check method: create a `Checker`, then call the relevant method, passing in the content as key-value pairs.
+Akismet may occasionally get things wrong, either by flagging legitimate content as spam or failing to identify spam. You can report these errors to Akismet with the `ReportHam` and `ReportSpam` methods.
+
+The process is the same as for the `Check` method: create a `Checker`, then call the relevant method, passing in the content as key-value pairs.
 
 ## Further Reading
 
