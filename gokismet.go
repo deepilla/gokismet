@@ -280,7 +280,7 @@ func (ch *Checker) call(url string, params map[string]string) ([]byte, http.Head
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, nil, errors.New("got " + resp.Status + " from " + url)
+		return nil, nil, errors.New(resp.Status + " returned from " + url)
 	}
 
 	body, err := ioutil.ReadAll(resp.Body)
@@ -398,7 +398,7 @@ func (e ValError) Error() string {
 		case methodCheck:
 			hint = "expected true or false"
 		case methodReportHam, methodReportSpam:
-			hint = "expected thank you message"
+			hint = "expected a thank you message"
 		}
 	}
 

@@ -642,7 +642,7 @@ func sharedResponseTests(method string) []ResponseTest {
 					StatusCode: http.StatusMovedPermanently,
 				},
 			},
-			Error: errors.New("got 301 Moved Permanently from https://rest.akismet.com/1.1/verify-key"),
+			Error: errors.New("301 Moved Permanently returned from https://rest.akismet.com/1.1/verify-key"),
 		},
 		{
 			// API key not verified.
@@ -695,7 +695,7 @@ func sharedResponseTests(method string) []ResponseTest {
 					StatusCode: http.StatusInternalServerError,
 				},
 			},
-			Error: errors.New("got 500 Internal Server Error from https://123456789abc.rest.akismet.com/1.1/" + method),
+			Error: errors.New("500 Internal Server Error returned from https://123456789abc.rest.akismet.com/1.1/" + method),
 		},
 		{
 			// Unexpected return value from Akismet call.
@@ -876,7 +876,7 @@ func TestError_ValError(t *testing.T) {
 		},
 		{
 			Method:   "submit-ham",
-			Expected: `submit-ham returned an empty string (expected thank you message)`,
+			Expected: `submit-ham returned an empty string (expected a thank you message)`,
 		},
 		{
 			Method:   "submit-ham",
@@ -886,7 +886,7 @@ func TestError_ValError(t *testing.T) {
 		{
 			Method:   "submit-ham",
 			Response: "invalid",
-			Expected: `submit-ham returned "invalid" (expected thank you message)`,
+			Expected: `submit-ham returned "invalid" (expected a thank you message)`,
 		},
 		{
 			Method:   "submit-ham",
@@ -896,7 +896,7 @@ func TestError_ValError(t *testing.T) {
 		},
 		{
 			Method:   "submit-spam",
-			Expected: `submit-spam returned an empty string (expected thank you message)`,
+			Expected: `submit-spam returned an empty string (expected a thank you message)`,
 		},
 		{
 			Method:   "submit-spam",
@@ -906,7 +906,7 @@ func TestError_ValError(t *testing.T) {
 		{
 			Method:   "submit-spam",
 			Response: "invalid",
-			Expected: `submit-spam returned "invalid" (expected thank you message)`,
+			Expected: `submit-spam returned "invalid" (expected a thank you message)`,
 		},
 		{
 			Method:   "submit-spam",
