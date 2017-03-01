@@ -101,9 +101,10 @@ const (
 	StatusDefiniteSpam
 )
 
-// A Client executes an HTTP request and returns a response.
-// Its interface is satisfied by http.Client. Provide your own
-// implementation to intercept gokismet's requests and responses.
+// A Client is responsible for executing HTTP requests.
+// Its interface is satisfied by http.Client. Provide
+// your own implementation to intercept gokismet's
+// requests and responses.
 type Client interface {
 	Do(req *http.Request) (*http.Response, error)
 }
@@ -160,12 +161,11 @@ func NewCheckerClient(key string, site string, client Client) *Checker {
 // checks it for spam. If an error occurs, Check returns
 // StatusUnknown and a non-nil error.
 //
-// The key-value pairs can either be constructed manually
-// (see the Akismet docs for a list of valid keys) or
-// generated with the Comment type. Either way, it's
-// important to set as many values as possible. The more
-// data Akismet has to work with, the faster and more
-// accurate its spam detection.
+// Key-value pairs can either be constructed manually (see
+// the Akismet docs for a list of valid keys) or generated
+// with the Comment type. It's important to provide as many
+// values as possible. The more data Akismet has to work
+// with, the faster and more accurate its spam detection.
 func (ch *Checker) Check(values map[string]string) (SpamStatus, error) {
 
 	if !ch.verified {
@@ -239,8 +239,8 @@ func (ch *Checker) report(method string, values map[string]string) error {
 // verify authenticates a Checker's API key and website.
 func (ch *Checker) verify() error {
 
-	// The verify-key endpoint is not qualified with the API
-	// key so pass a blank string to buildURL instead.
+	// The verify-key endpoint is not qualified with an
+	// API key so we pass a blank key to buildUrl.
 	url := buildURL(methodVerify, "")
 
 	values := map[string]string{
@@ -361,10 +361,10 @@ func mergeStringMaps(maps ...map[string]string) map[string]string {
 	return values
 }
 
-// A ValError is an error returned by the Checker methods.
-// It means that Akismet returned an unexpected response.
-// Typically this indicates a problem with the data sent
-// to Akismet, e.g. a required value not being set.
+// A ValError is the error returned by the Checker methods
+// if Akismet returns an unexpected response. Typically it
+// indicates a problem with the data sent to Akismet, e.g.
+// a required value not being set.
 type ValError struct {
 	// The Akismet method being called.
 	Method string
@@ -409,8 +409,8 @@ func (e ValError) Error() string {
 	return s
 }
 
-// A KeyError is an error returned by the Checker methods.
-// It means that Akismet failed to verify an API key.
+// A KeyError is the error returned by the Checker methods
+// if Akismet fails to verify an API key.
 type KeyError struct {
 	// The API key being verified.
 	Key string
@@ -436,8 +436,8 @@ func (e KeyError) Error() string {
 // for spam, such as a blog comment or forum post.
 //
 // The Comment type provides a convenient way to generate
-// key-value pairs for the Checker methods. Its use is
-// optional.
+// key-value pairs for the Checker methods. However its use
+// is completely optional.
 type Comment struct {
 
 	// Homepage URL of the website being commented on.
