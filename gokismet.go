@@ -288,23 +288,16 @@ func (ch *Checker) call(url string, params map[string]string) ([]byte, http.Head
 	return body, resp.Header, err
 }
 
-// buildURL returns the Akismet endpoint URL for the given
-// API method. If a non-empty API key is provided, the
-// hostname will be qualified with that key.
+// buildURL returns the Akismet endpoint URL for the
+// given API method. If a non-empty API key is provided,
+// the hostname is qualified with the key.
 func buildURL(method string, key string) string {
 
-	host := "rest.akismet.com"
+	s := "https://"
 	if key != "" {
-		host = key + "." + host
+		s += key + "."
 	}
-
-	u := url.URL{
-		Scheme: "https",
-		Host:   host,
-		Path:   "1.1/" + method,
-	}
-
-	return u.String()
+	return s + "rest.akismet.com/1.1/" + method
 }
 
 // newRequest creates an HTTP Request from the given
@@ -494,12 +487,14 @@ type Comment struct {
 func (c *Comment) Values() map[string]string {
 
 	insert := func(dst map[string]string, key, value string) map[string]string {
-		if value != "" {
-			if dst == nil {
-				dst = make(map[string]string)
-			}
-			dst[key] = value
+		if value == "" {
+			return dst
 		}
+
+		if dst == nil {
+			dst = make(map[string]string)
+		}
+		dst[key] = value
 		return dst
 	}
 
@@ -507,8 +502,8 @@ func (c *Comment) Values() map[string]string {
 		if value.IsZero() {
 			return dst
 		}
-		// Akismet requires UTC time in ISO 8601 format, e.g.
-		// "2016-04-18T09:30:59Z".
+		// Akismet requires UTC time in ISO 8601 format
+		// e.g. "2016-04-18T09:30:59Z".
 		return insert(dst, key, value.UTC().Format(time.RFC3339))
 	}
 
