@@ -1,14 +1,21 @@
+// This code example uses the Context package, introduced
+// in Go 1.7. To prevent older versions of Go choking on
+// the Context code, this file is excluded from pre-1.7
+// builds.
+
+// +build go1.7
+
 package gokismet_test
 
 import (
+	"context"
 	"fmt"
-	"io"
 	"net/http"
-	"net/http/httputil"
-	"os"
 
 	"github.com/deepilla/gokismet"
 )
+
+type contextKey string
 
 // An Adapter is a function that takes an existing Client
 // and supplements it with additional functionality.
@@ -22,8 +29,8 @@ func adapt(client gokismet.Client, adapters ...Adapter) gokismet.Client {
 	return client
 }
 
-// withHeader returns an Adapter that sets a custom header
-// on outgoing HTTP requests before executing them.
+// withHeader returns an Adapter that adds a custom header
+// to outgoing HTTP requests.
 func withHeader(key, value string) Adapter {
 	return func(client gokismet.Client) gokismet.Client {
 		return gokismet.ClientFunc(func(req *http.Request) (*http.Response, error) {
@@ -33,23 +40,13 @@ func withHeader(key, value string) Adapter {
 	}
 }
 
-// withRequestWriter returns an Adapter that logs outgoing
-// HTTP requests to a Writer before executing them.
-func withRequestWriter(writer io.Writer) Adapter {
+// withContext returns an Adapter that adds a custom context
+// value to outgoing HTTP requests.
+func withContext(key, value string) Adapter {
 	return func(client gokismet.Client) gokismet.Client {
 		return gokismet.ClientFunc(func(req *http.Request) (*http.Response, error) {
-
-			buf, err := httputil.DumpRequestOut(req, true)
-			if err != nil {
-				return nil, err
-			}
-
-			_, err = writer.Write(buf)
-			if err != nil {
-				return nil, err
-			}
-
-			return client.Do(req)
+			ctx := context.WithValue(req.Context(), contextKey(key), value)
+			return client.Do(req.WithContext(ctx))
 		})
 	}
 }
@@ -60,19 +57,19 @@ func ExampleClientFunc_adapter() {
 	// Content goes here...
 	}
 
-	// Create a Client that adds custom headers and logging
-	// to outgoing HTTP requests.
+	// Create a Client that adds custom headers and context
+	// values to outgoing HTTP requests.
 	client := adapt(http.DefaultClient,
-		withRequestWriter(os.Stdout),
-		withHeader("User-Agent", "MyApplication/1.0 | "+gokismet.UserAgent),
+		withHeader("User-Agent", "YourApp/1.0 | "+gokismet.UserAgent),
 		withHeader("Cache-Control", "no-cache"),
+		withContext("SessionID", "1234567890"),
 	)
 
 	// Create a Checker that uses the Client.
 	ch := gokismet.NewCheckerClient("YOUR-API-KEY", "http://your-website.com", client)
 
 	// The Checker's HTTP requests now include the custom
-	// headers and are written to stdout.
+	// headers and context values.
 	status, err := ch.Check(comment.Values())
 
 	fmt.Println(status, err)

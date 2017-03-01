@@ -2,39 +2,24 @@ package gokismet_test
 
 import (
 	"fmt"
-	"io"
 	"net/http"
-	"net/http/httputil"
-	"os"
 
 	"github.com/deepilla/gokismet"
 )
 
-// A RequestWriterClient is a Client that logs outgoing
-// requests to a Writer.
-type RequestWriterClient struct {
-	client gokismet.Client
-	writer io.Writer
-}
+// A UserAgentClient is a Client that applies a custom
+// user agent to outgoing HTTP requests.
+type UserAgentClient string
 
-// Do logs and executes outgoing requests.
+// Do sets the User-Agent header on the outgoing request
+// before executing it with the default HTTP client.
 //
-// Note: For simple cases like this, where a Client's
-// custom behaviour is contained in a single function,
+// Note: For simple cases like this, where a custom
+// Client's behaviour is contained in a single function,
 // consider using a ClientFunc instead of a type.
-func (rw *RequestWriterClient) Do(req *http.Request) (*http.Response, error) {
-
-	buf, err := httputil.DumpRequestOut(req, true)
-	if err != nil {
-		return nil, err
-	}
-
-	_, err = rw.writer.Write(buf)
-	if err != nil {
-		return nil, err
-	}
-
-	return rw.client.Do(req)
+func (ua UserAgentClient) Do(req *http.Request) (*http.Response, error) {
+	req.Header.Set("User-Agent", string(ua))
+	return http.DefaultClient.Do(req)
 }
 
 func ExampleClient() {
@@ -43,17 +28,14 @@ func ExampleClient() {
 	// Content goes here...
 	}
 
-	// Create a RequestWriterClient that uses the default
-	// HTTP client and writes to stdout.
-	client := &RequestWriterClient{
-		http.DefaultClient,
-		os.Stdout,
-	}
+	// Create a UserAgentClient from a user agent string.
+	client := UserAgentClient("YourApp/1.0 | " + gokismet.UserAgent)
 
 	// Create a Checker that uses the Client.
 	ch := gokismet.NewCheckerClient("YOUR-API-KEY", "http://your-website.com", client)
 
-	// The Checker's HTTP requests are now written to stdout.
+	// The Checker's HTTP requests now include our custom
+	// user agent.
 	status, err := ch.Check(comment.Values())
 
 	fmt.Println(status, err)

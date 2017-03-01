@@ -7,12 +7,14 @@ import (
 	"github.com/deepilla/gokismet"
 )
 
-// do is a standalone function that modifies the headers
-// of outgoing HTTP requests before executing them. Note
-// that its function signature matches ClientFunc.
-func do(req *http.Request) (*http.Response, error) {
-	req.Header.Set("User-Agent", "MyApplication/1.0 | "+gokismet.UserAgent)
-	return http.DefaultClient.Do(req)
+// ClientWithUserAgent takes a user agent and returns a
+// Client that applies that user agent to outgoing HTTP
+// requests.
+func ClientWithUserAgent(ua string) gokismet.Client {
+	return gokismet.ClientFunc(func(req *http.Request) (*http.Response, error) {
+		req.Header.Set("User-Agent", ua)
+		return http.DefaultClient.Do(req)
+	})
 }
 
 func ExampleClientFunc() {
@@ -21,16 +23,14 @@ func ExampleClientFunc() {
 	// Content goes here...
 	}
 
-	// Convert the do function into a gokismet Client by casting
-	// it to a ClientFunc. We can do this with any function that
-	// has this function signature.
-	client := gokismet.ClientFunc(do)
+	// Create a Client with a custom user agent.
+	client := ClientWithUserAgent("YourApp/1.0 | " + gokismet.UserAgent)
 
 	// Create a Checker that uses the Client.
 	ch := gokismet.NewCheckerClient("YOUR-API-KEY", "http://your-website.com", client)
 
-	// The Checker's HTTP requests are now executed via the do
-	// function and will include the modified header.
+	// The Checker's HTTP requests now include our
+	// custom user agent.
 	status, err := ch.Check(comment.Values())
 
 	fmt.Println(status, err)
